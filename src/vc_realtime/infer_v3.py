@@ -68,6 +68,7 @@ from vc_realtime.speaker_encoder_v3 import (  # noqa: E402
     SPARK_HOP,  # noqa: E402
     SPARK_N_FFT,  # noqa: E402
     SPARK_N_MELS,  # noqa: E402
+    SPARK_OUT_DIM,  # noqa: E402
     SPARK_REF_DURATION_S,  # noqa: E402
     SPARK_SAMPLE_RATE,  # noqa: E402
     pack_fsq_to_48_bytes,  # noqa: E402
