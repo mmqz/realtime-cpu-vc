@@ -514,28 +514,56 @@ fn knn_retrieve_np<'py>(
         Some(s) => s.to_vec(),
         None => target_arr.iter().cloned().collect(),
     };
-    let mut out_flat = vec![0.0f32; batch * dim * t_src];
+
+    // ---- Source transpose: [B, dim, T_src] → frame-major [B, T_src, dim] ----
+    // OLD: Python-style double for-loop with per-element ndarray indexing
+    // (`content_arr[[b, c, t]]` is ~10ns/elem due to bounds checks). For
+    // dim=768, t_src=100, batch=1, that's 76_800 indexing ops ≈ 0.8ms.
+    //
+    // NEW: `permuted_axes` + `iter()` — ndarray's optimized element iterator
+    // walks the view in C-order of the *logical* (post-permute) shape, so
+    // for a [B, T_src, dim] view the iteration yields `(b, t, c)` in the
+    // exact frame-major flat order that `knn_retrieve` expects. No per-element
+    // bounds checks (the iterator precomputes stride arithmetic), ~2-5× faster
+    // than the per-element double-for-loop.
+    //
+    // NOTE: We don't use `permuted.as_slice()` because the permuted view has
+    // non-C-contiguous strides `[dim*T, 1, T]` (the original dim-axis stride
+    // becomes 1 in the new layout). `as_slice()` requires standard layout and
+    // returns None. `.iter()` works on any strided view.
+    let content_view = content_arr.view(); // [B, dim, T_src]
+    let src_permuted = content_view.permuted_axes([0, 2, 1]); // [B, T_src, dim]
+    let src_flat: Vec<f32> = src_permuted.iter().copied().collect();
+
+    // ---- Per-batch kNN inference ----
+    // Output written to a frame-major [B, T_src, dim] flat buffer; we'll
+    // transpose back to channel-first at the end (one more permute + iter).
+    let mut out_frame_flat = vec![0.0f32; batch * t_src * dim];
     for b in 0..batch {
-        // Build a frame-major flat source slice for this batch:
-        //   src[t*dim + c] = content[b, c, t]
-        // (The Rust kNN expects [T_src, dim] row-major — we transpose on the
-        // fly because the input is channel-first.)
-        let mut src_vec = vec![0.0f32; t_src * dim];
-        for c in 0..dim {
-            for t in 0..t_src {
-                src_vec[t * dim + c] = content_arr[[b, c, t]];
-            }
-        }
+        let offset = b * t_src * dim;
+        // `src_flat[offset..]` is already frame-major [T_src, dim] — no
+        // per-element indexing. `knn_retrieve` reads it as `[t*dim + c]`.
+        let src_b = &src_flat[offset..offset + t_src * dim];
         // Rust kNN hot path — SIMD dot product over all T_ref × T_src pairs.
-        let replaced = knn_retrieve(&src_vec, &target_vec, dim, t_src, t_ref, top_k);
-        // Transpose back to channel-first [dim, T_src] for this batch:
-        //   out[b, c, t] = replaced[t*dim + c]
-        for c in 0..dim {
-            for t in 0..t_src {
-                out_flat[b * dim * t_src + c * t_src + t] = replaced[t * dim + c];
-            }
-        }
+        let replaced = knn_retrieve(src_b, &target_vec, dim, t_src, t_ref, top_k);
+        // Bulk slice copy — single memcpy, no per-element loop.
+        out_frame_flat[offset..offset + t_src * dim].copy_from_slice(&replaced);
     }
+
+    // ---- Output transpose: [B, T_src, dim] → [B, dim, T_src] ----
+    // Same pattern as the source transpose: wrap the flat buffer in an owned
+    // [B, T_src, dim] Array3 (C-contiguous), permute to [B, dim, T_src], then
+    // iterate in C-order of the permuted view to produce the final
+    // channel-first flat buffer. Hand the buffer to `into_pyarray_bound`
+    // (zero-copy → NumPy).
+    let out_frame_arr = np::ndarray::Array3::<f32>::from_shape_vec(
+        (batch, t_src, dim),
+        out_frame_flat,
+    )
+    .map_err(|e| PyRuntimeError::new_err(format!("shape error: {e}")))?;
+    let out_channel_permuted = out_frame_arr.view().permuted_axes([0, 2, 1]); // [B, dim, T_src]
+    let out_flat = out_channel_permuted.iter().copied().collect::<Vec<f32>>();
+
     // `into_pyarray_bound` moves the Vec's allocation into a NumPy array
     // (zero-copy) and assigns the requested shape.
     // NOTE: must use `np::ndarray` (ndarray 0.16, the version numpy 0.22

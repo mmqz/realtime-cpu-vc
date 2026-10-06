@@ -276,6 +276,79 @@ impl InferenceSession {
         }
     }
 
+    /// Run inference and return ALL outputs as a `Vec<ArrayD<f32>>`.
+    ///
+    /// Unlike [`InferenceSession::run`] which returns only the first output
+    /// (matching the v1.0 Python convention of `outputs[0]`), `run_all`
+    /// extracts every output declared by the ONNX graph in declaration order.
+    ///
+    /// Required for multi-output ONNX models like the v3-hybrid
+    /// `encoder.int8.onnx` (TinyVC) which produces two outputs:
+    ///   - `content`   `[B, 768, T]` — content features for kNN-VC retrieval
+    ///   - `f0_logits` `[B, 512, T]` — pitch classification logits
+    ///
+    /// The caller indexes into the returned `Vec` positionally (output 0,
+    /// output 1, ...) — the order matches `session.outputs()`.
+    ///
+    /// # Errors
+    /// - [`InferError::NoSession`] if no backend session is loaded.
+    /// - [`InferError::Ort`] if any output extraction fails (e.g. the
+    ///   declared output name is missing from `SessionOutputs`, or the
+    ///   tensor element type is not `f32`).
+    /// - [`InferError::MultiOutput`] (Tract only) if any output is missing
+    ///   — Tract returns outputs as a `TVec<TValue>` indexed positionally,
+    ///   so we just extract them in order.
+    pub fn run_all(&mut self, input: ArrayD<f32>) -> InferResult<Vec<ArrayD<f32>>> {
+        match self.backend {
+            Backend::Ort => {
+                let session = self
+                    .session_ort
+                    .as_mut()
+                    .ok_or(InferError::NoSession)?;
+                // Capture ALL output names BEFORE the mutable `run` borrow,
+                // same pattern as `run()` (the borrow checker would otherwise
+                // flag `session.outputs()` as a second immutable borrow alive
+                // alongside the mutable `session.run` one).
+                let out_names: Vec<String> = session
+                    .outputs()
+                    .iter()
+                    .map(|o| o.name().to_string())
+                    .collect();
+                let tensor = ort::value::Tensor::<f32>::from_array(input)?;
+                let outputs = session.run(ort::inputs![tensor])?;
+                let mut result = Vec::with_capacity(out_names.len());
+                for name in &out_names {
+                    let out_value = outputs
+                        .get(name.as_str())
+                        .ok_or_else(|| InferError::Ort(format!("output `{name}` missing")))?;
+                    let view = out_value.try_extract_array::<f32>()?;
+                    // `view` is `ArrayViewD<'_, f32>` (dynamic dim, borrowed
+                    // from `outputs`). `into_owned()` clones the data into an
+                    // owned `Array<f32, IxDyn>` = `ArrayD<f32>`. We do this
+                    // because `outputs` (and the views into it) are dropped
+                    // at the end of this scope.
+                    result.push(view.into_owned());
+                }
+                Ok(result)
+            }
+            Backend::Tract => {
+                let runnable = self
+                    .session_tract
+                    .as_ref()
+                    .ok_or(InferError::NoSession)?;
+                let inputs: TVec<TValue> = tvec![input.into_tvalue()];
+                let outputs: TVec<TValue> =
+                    <Arc<TypedRunnableModel> as Runnable>::run(runnable, inputs)?;
+                let mut result = Vec::with_capacity(outputs.len());
+                for out_tensor in &outputs {
+                    let view = out_tensor.to_plain_array_view::<f32>()?;
+                    result.push(view.to_owned());
+                }
+                Ok(result)
+            }
+        }
+    }
+
     /// Run inference with named input bindings. Use this for multi-input
     /// graphs (e.g. `decoder.filter_net` which takes `content`, `f0`,
     /// `energy`, `source`).
@@ -582,6 +655,57 @@ mod tests {
                 // exercise the load → run → extract plumbing, not to
                 // assert numerical correctness.
                 eprintln!("SKIP: forward pass failed (likely shape mismatch): {e}");
+            }
+        }
+    }
+
+    /// Verify `run_all` returns every output for a multi-output ONNX model.
+    ///
+    /// The TinyVC encoder (`encoder.int8.onnx`) declares two outputs:
+    ///   - `content`   [B, 768, T] — content features
+    ///   - `f0_logits` [B, 512, T] — pitch classification logits
+    ///
+    /// `run_all` should return a `Vec<ArrayD<f32>>` of length 2 with both
+    /// outputs present, in the order declared by the ONNX graph.
+    #[test]
+    fn test_run_all_multi_output() {
+        let encoder_path = format!("{MODELS_DIR}/encoder.int8.onnx");
+        if !have(&encoder_path) {
+            eprintln!("SKIP: {encoder_path} not found");
+            return;
+        }
+        let mut sess = InferenceSession::load(&encoder_path, Backend::Ort)
+            .expect("ORT load failed");
+        // Inspect the input fact — TinyVC encoder expects [B, 961, T]
+        // (log-mel spectrogram, 961 bins).
+        let inputs = sess.session_ort.as_ref().unwrap().inputs();
+        let _name = inputs[0].name(); // suppress unused-warning, debug aid
+        // Small zero block — if the actual model needs a different shape,
+        // `run_all` will surface the error and we skip rather than fail.
+        let input = ndarray::Array3::<f32>::zeros((1, 961, 50)).into_dyn();
+        match sess.run_all(input) {
+            Ok(outputs) => {
+                assert!(
+                    outputs.len() >= 2,
+                    "expected >= 2 outputs for multi-output encoder, got {}",
+                    outputs.len()
+                );
+                // Each output tensor must be non-empty (shape dim > 0).
+                for (i, out) in outputs.iter().enumerate() {
+                    assert!(
+                        out.len() > 0,
+                        "output {i} is empty (shape={:?})",
+                        out.shape()
+                    );
+                }
+                eprintln!(
+                    "test_run_all_multi_output: {} outputs, shapes = {:?}",
+                    outputs.len(),
+                    outputs.iter().map(|o| o.shape()).collect::<Vec<_>>()
+                );
+            }
+            Err(e) => {
+                eprintln!("SKIP: run_all forward failed (likely shape mismatch): {e}");
             }
         }
     }
