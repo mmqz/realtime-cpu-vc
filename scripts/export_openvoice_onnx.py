@@ -71,7 +71,6 @@ Licenses
 
 from __future__ import annotations
 
-import os
 import sys
 import warnings
 from pathlib import Path
@@ -84,7 +83,7 @@ if str(OPENVOICE_REPO) not in sys.path:
     sys.path.insert(0, str(OPENVOICE_REPO))
 
 from openvoice.api import ToneColorConverter  # noqa: E402
-from openvoice.models import ResidualCouplingBlock, ReferenceEncoder, SynthesizerTrn  # noqa: E402
+from openvoice.models import ReferenceEncoder, ResidualCouplingBlock, SynthesizerTrn  # noqa: E402
 
 # -- Constants from the v2 config (filter_length=1024 → spec_channels=513)
 CONFIG_PATH = OPENVOICE_REPO / "checkpoints_v2" / "converter" / "config.json"
@@ -316,7 +315,7 @@ def main() -> int:
     print(f"      outputs: {info['outputs']}")
 
     # 4. End-to-end sanity: ONNX output matches torch wrapper output.
-    print(f"\n[4/4] Parity check (torch wrapper vs ONNX runtime)")
+    print("\n[4/4] Parity check (torch wrapper vs ONNX runtime)")
     _parity_check(ref_path, flow_path, syn)
 
     print("\nDone. Two ONNX graphs written to", out_dir)

@@ -20,7 +20,7 @@ import pytest
 
 # `conftest.py` at the prototype root prepends `src/` to sys.path so this
 # import works without `pip install -e .`.
-from vc_realtime.infer_v2 import V2Infer, OPENVOICE_EMB_DIM, SAMPLE_RATE
+from vc_realtime.infer_v2 import OPENVOICE_EMB_DIM, SAMPLE_RATE, V2Infer
 
 
 # ---------------------------------------------------------------------------

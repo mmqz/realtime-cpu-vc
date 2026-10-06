@@ -66,10 +66,8 @@ Benchmarking::
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -86,11 +84,12 @@ except ImportError:  # pragma: no cover — librosa is in requirements.txt
 # This is deliberate: v2's runtime path is *identical* to v1; the OpenVoice
 # ReferenceEncoder is offline-only. Inheriting keeps the runtime behavior
 # provably identical to the v1 baseline that already passes 9/9 tests.
-from vc_realtime.infer_v1 import V1Infer  # noqa: E402
-from vc_realtime.infer_v1 import SAMPLE_RATE  # noqa: E402
-
 import onnxruntime as ort  # noqa: E402
 
+from vc_realtime.infer_v1 import (
+    SAMPLE_RATE,  # noqa: E402
+    V1Infer,  # noqa: E402
+)
 
 # ---------------------------------------------------------------------------
 # OpenVoice v2 ReferenceEncoder constants (verified P2-1)
@@ -172,7 +171,7 @@ class V2Infer(V1Infer):
 
         # Lazily load OpenVoice RefEncoder ONNX. Skip if the caller only wants
         # the runtime path (saves memory).
-        self._ref_encoder: Optional[ort.InferenceSession] = None
+        self._ref_encoder: ort.InferenceSession | None = None
         if load_ref_encoder:
             self._ref_encoder = self._load_ref_encoder_session(models_dir, use_int8)
 
@@ -392,7 +391,7 @@ class V2Infer(V1Infer):
             return
         save_file(tensors, str(out_path))
 
-    def get_openvoice_embedding(self, voice_id: int) -> Optional[np.ndarray]:
+    def get_openvoice_embedding(self, voice_id: int) -> np.ndarray | None:
         """Lookup the OpenVoice 256-d embedding for `voice_id`, or None.
 
         This is a runtime convenience accessor; v2 does NOT actually use the
@@ -406,7 +405,7 @@ class V2Infer(V1Infer):
 # ---------------------------------------------------------------------------
 # Module-level singleton for benchmark.py / realtime_infer.py compatibility.
 # ---------------------------------------------------------------------------
-_default_infer: Optional[V2Infer] = None
+_default_infer: V2Infer | None = None
 
 
 def process_audio(wav: np.ndarray, sr: int, voice_id: int = 0) -> np.ndarray:
@@ -533,8 +532,8 @@ def main(argv: list[str] | None = None) -> int:
           f"pitch_shift={args.pitch_shift}")
     print(f"[infer_v2] wrote {args.output}: {SAMPLE_RATE}Hz mono, "
           f"{dur:.3f}s, output RMS={rms:.4f}")
-    print(f"[infer_v2] (runtime path identical to v1; OpenVoice RefEncoder "
-          f"loaded only at registration time)")
+    print("[infer_v2] (runtime path identical to v1; OpenVoice RefEncoder "
+          "loaded only at registration time)")
     return 0
 
 

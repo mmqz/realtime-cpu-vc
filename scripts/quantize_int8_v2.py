@@ -87,9 +87,9 @@ def quantize_one(fp32_path: Path, int8_path: Path, per_channel: bool) -> None:
     """Apply dynamic INT8 PTQ to a single ONNX model and print the size delta."""
     print(f"\n[quantize] {fp32_path.name} -> {int8_path.name}")
     print(f"  per_channel   : {per_channel}")
-    print(f"  weight_type   : QInt8")
+    print("  weight_type   : QInt8")
     print(f"  op_types      : {OP_TYPES_TO_QUANTIZE}")
-    print(f"  reduce_range  : False")
+    print("  reduce_range  : False")
 
     # Remove any stale int8 output so a failed run doesn't silently leave an
     # old artifact behind (the parity check would then compare against the

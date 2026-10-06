@@ -21,7 +21,6 @@ Verifies that ``models/openvoice_ref_encoder.onnx`` and
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
