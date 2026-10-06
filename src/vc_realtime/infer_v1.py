@@ -145,13 +145,23 @@ class V1Infer:
     Parameters
     ----------
     models_dir : str | Path
-        Directory containing ``encoder.pt``, ``decoder.pt``, ``voices.pt``.
+        Directory containing ``encoder.pt``, ``decoder.pt`` and either
+        ``voices_v1.safetensors`` (preferred) or legacy ``voices.pt``.
     device : str
         Torch device string. Defaults to ``"cpu"`` per project constraint.
     top_k : int
         kNN-VC top-k (default 4, matching upstream TinyVC).
     alpha : float
         kNN-VC blend factor (0 = full target replace, 1 = identity).
+
+    Notes
+    -----
+    The voice index is loaded via :meth:`_load_voices`, which prefers the
+    safe ``voices_v1.safetensors`` file (no arbitrary-code execution on
+    load) over the legacy ``voices.pt`` pickle. To migrate an existing
+    ``voices.pt``::
+
+        python3 scripts/migrate_voices_to_safetensors.py
     """
 
     def __init__(
@@ -168,7 +178,6 @@ class V1Infer:
         models_dir = Path(models_dir)
         enc_path = models_dir / "encoder.pt"
         dec_path = models_dir / "decoder.pt"
-        voices_path = models_dir / "voices.pt"
 
         if not enc_path.exists():
             raise FileNotFoundError(
@@ -182,11 +191,6 @@ class V1Infer:
                 f"'uthree/tinyvc': "
                 f"hf_hub_download('uthree/tinyvc', 'models/decoder.pt')"
             )
-        if not voices_path.exists():
-            raise FileNotFoundError(
-                f"voices.pt not found at {voices_path}. Build it with: "
-                f"python3 scripts/build_voices_index.py"
-            )
 
         # Load TinyVC encoder + decoder
         self.encoder = _TinyVCEncoder().to(self.device).eval()
@@ -194,19 +198,12 @@ class V1Infer:
         self.decoder = _TinyVCDecoder().to(self.device).eval()
         self.decoder.load_state_dict(torch.load(str(dec_path), map_location=self.device))
 
-        # Load the multi-voice kNN index.
-        # voices.pt is a dict[str, Tensor[1, 768, T_ref]] — saved by
-        # scripts/build_voices_index.py. T_ref is per-voice (we pad with a
-        # fallback to 0 in case of mismatch).
-        voices_state = torch.load(str(voices_path), map_location=self.device, weights_only=False)
-        if not isinstance(voices_state, dict):
-            # Backwards-compat: a single stacked tensor [N, 1, 768, T]
-            voices_state = {
-                f"voice_{i}": voices_state[i : i + 1] for i in range(voices_state.shape[0])
-            }
-        self.voices: dict[str, torch.Tensor] = {
-            k: v.to(self.device).to(torch.float32) for k, v in voices_state.items()
-        }
+        # Load the multi-voice kNN index. Prefers the safe
+        # ``voices_v1.safetensors`` file (no arbitrary-code execution on
+        # load); falls back to legacy ``voices.pt`` with a DeprecationWarning.
+        self.voices: dict[str, torch.Tensor] = self._load_voices(str(models_dir))
+        # Backwards-compat alias used by some tests / external callers.
+        self.tinyvc_voices = self.voices
         # Sort by voice id for predictable indexing
         self._voice_keys = sorted(
             self.voices.keys(),
@@ -219,6 +216,76 @@ class V1Infer:
         # settle before the first "real" inference call (avoids the ~100ms
         # first-call latency penalty on cold-start benchmarks / realtime).
         self._warmup()
+
+    # ------------------------------------------------------------------
+    # Voice index loading (safetensors first, .pt legacy fallback)
+    # ------------------------------------------------------------------
+    def _load_voices(self, models_dir: str) -> dict[str, torch.Tensor]:
+        """Load the multi-voice kNN index.
+
+        Tries ``voices_v1.safetensors`` first (safe — safetensors does NOT
+        execute arbitrary code on load, unlike ``torch.load`` on a pickle).
+        Falls back to legacy ``voices.pt`` with a DeprecationWarning if the
+        safetensors file is missing.
+
+        Raises
+        ------
+        FileNotFoundError
+            If neither file is present in ``models_dir``.
+        """
+        safetensors_path = Path(f"{models_dir}/voices_v1.safetensors")
+        pt_path = Path(f"{models_dir}/voices.pt")
+
+        if safetensors_path.exists():
+            # Safe: safetensors doesn't execute arbitrary code on load.
+            from safetensors.torch import load_file
+
+            voices_state = load_file(str(safetensors_path))
+            if not isinstance(voices_state, dict):
+                raise TypeError(
+                    f"voices_v1.safetensors at {safetensors_path} did not "
+                    f"contain a dict[str -> Tensor] mapping."
+                )
+            # Convert FP16 storage back to FP32 for inference (kNN-VC cosine
+            # retrieval is FP32 in upstream TinyVC).
+            voices = {
+                k: v.to(self.device).to(torch.float32) for k, v in voices_state.items()
+            }
+            print(f"[v1] loaded voices from safetensors "
+                  f"({len(voices)} voices) at {safetensors_path.name}")
+        elif pt_path.exists():
+            # Legacy: torch.load with weights_only=False (security risk).
+            # Migrate via `scripts/migrate_voices_to_safetensors.py`.
+            import warnings
+
+            warnings.warn(
+                "voices.pt is deprecated — running "
+                "scripts/migrate_voices_to_safetensors.py to convert it to "
+                "voices_v1.safetensors will remove this security risk.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            voices_state = torch.load(
+                str(pt_path), map_location=self.device, weights_only=False
+            )
+            if not isinstance(voices_state, dict):
+                # Backwards-compat: a single stacked tensor [N, 1, 768, T]
+                voices_state = {
+                    f"voice_{i}": voices_state[i : i + 1]
+                    for i in range(voices_state.shape[0])
+                }
+            voices = {
+                k: v.to(self.device).to(torch.float32) for k, v in voices_state.items()
+            }
+            print(f"[v1] loaded voices from .pt (legacy, "
+                  f"{len(voices)} voices) at {pt_path.name}")
+        else:
+            raise FileNotFoundError(
+                f"No voice index found at {models_dir}/ — expected "
+                f"voices_v1.safetensors (preferred) or voices.pt (legacy). "
+                f"Build it with: python3 scripts/build_voices_index.py"
+            )
+        return voices
 
     # ------------------------------------------------------------------
     # Warmup — run 1s of silence per voice to prime PyTorch kernels
@@ -445,6 +512,78 @@ class V1Infer:
             out = self._run_pipeline(chunk, voice_id)
             outputs.append(out)
         return np.concatenate(outputs)
+
+    def process_audio_batched(
+        self,
+        wav: np.ndarray,
+        sr: int,
+        voice_id: int = 0,
+        batch_sec: float = 5.0,
+    ) -> np.ndarray:
+        """Process audio in batches for offline (non-streaming) use.
+
+        Splits the input into ``batch_sec``-second chunks, pads the last
+        chunk with zeros to a full ``chunk_size`` length, then runs each
+        chunk through :meth:`_run_pipeline`. This is the offline
+        counterpart to :meth:`process_audio_chunked` — both bound peak
+        PyTorch intermediate tensor size, but ``batched`` produces chunks
+        of identical length (convenient for stacking into a [N, T] batch
+        in a future optimisation).
+
+        Note
+        ----
+        True batched inference (stacking N chunks into one encoder forward
+        pass along the batch dim) would require modifying the upstream
+        TinyVC encoder to accept ``[N, C, T]`` input. The current
+        implementation processes chunks sequentially but pre-allocates the
+        full padded buffer once (instead of a Python list of slices),
+        which avoids per-chunk numpy allocation overhead.
+
+        Parameters
+        ----------
+        wav : np.ndarray
+            Source audio (any sr, mono or stereo, float32).
+        sr : int
+            Source sample rate. Will be resampled to 24 kHz if different.
+        voice_id : int
+            Target voice index (0 .. n_voices-1).
+        batch_sec : float
+            Chunk length in seconds. Default 5.0 (matches
+            :meth:`process_audio_chunked`).
+
+        Returns
+        -------
+        np.ndarray, float32 — concatenated output trimmed to ``len(wav)``.
+        """
+        # Preprocess (resample + peak-normalize) ONCE on the full wav so
+        # relative loudness is preserved across chunk boundaries (same
+        # invariant as process_audio_chunked).
+        wav = self._preprocess(wav, sr)
+
+        chunk_size = int(SAMPLE_RATE * batch_sec)
+        n_chunks = (len(wav) + chunk_size - 1) // chunk_size
+
+        # Pad the tail with zeros so every chunk has the same length
+        # (chunk_size). For batched processing this lets us reshape into
+        # [N, chunk_size] without per-chunk length checks.
+        padded = np.zeros(n_chunks * chunk_size, dtype=np.float32)
+        padded[: len(wav)] = wav
+
+        # Reshape to [N, chunk_size] — N forward passes (sequential for
+        # now; a future version can stack along the batch dim).
+        batched = padded.reshape(n_chunks, chunk_size)
+
+        outputs: list[np.ndarray] = []
+        for i in range(n_chunks):
+            chunk = batched[i]
+            # chunk is already 24 kHz mono peak-normalized — go straight
+            # to the core pipeline (no double preprocessing).
+            out = self._run_pipeline(chunk, voice_id)
+            outputs.append(out)
+
+        # Trim the padding-induced tail off the concatenated output so
+        # len(out) == len(input).
+        return np.concatenate(outputs)[: len(wav)]
 
     # ------------------------------------------------------------------
     # Hot-swap API (for streaming.py / realtime_infer.py)
