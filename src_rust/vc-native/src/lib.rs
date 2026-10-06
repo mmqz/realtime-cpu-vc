@@ -24,6 +24,13 @@ pub use miniaudio_ffi::{AudioDevice, MaDataCallback};
 mod stft;
 pub use stft::{linear_stft_magnitude, log_mel_spec, stft_magnitude, MelFilterBank};
 
+// StreamingPipeline (OPT-8): 2 SPSC rings + decoder thread for pipeline
+// parallelism between audio I/O (miniaudio GIL-free callback) and the heavy
+// encoder/decoder compute. See `streaming_pipeline.rs` for the architecture
+// diagram + the (deferred) miniaudio callback wiring plan.
+mod streaming_pipeline;
+pub use streaming_pipeline::StreamingPipeline;
+
 use wide::f32x4;
 
 // ============================================================

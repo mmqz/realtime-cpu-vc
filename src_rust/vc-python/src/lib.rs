@@ -35,7 +35,7 @@ use std::sync::Arc;
 use vc_native::{
     decode_f0_logits, knn_retrieve, linear_stft_magnitude, log_mel_spec,
     new_audio_ring_buffer, sola_crossfade, sola_find_best_offset, synth_harmonics,
-    AudioConfig, MelFilterBank,
+    AudioConfig, MelFilterBank, StreamingPipeline,
 };
 use vc_ort::{Backend, V3HybridSessions};
 
@@ -341,6 +341,117 @@ impl From<AudioConfigPy> for AudioConfig {
             low_latency: c.low_latency,
             exclusive_mode: c.exclusive_mode,
         }
+    }
+}
+
+// ===========================================================================
+// PyStreamingPipeline — Python-visible wrapper around StreamingPipeline
+// ===========================================================================
+//
+// OPT-8: GIL-free pipeline parallelism. The decoder thread + SPSC rings live
+// in Rust (vc_native::StreamingPipeline); Python just calls `start()` /
+// `stop()` / `push_input()` / `pop_output()`. The actual miniaudio callback
+// wiring (which would call `push_input` / `pop_output` directly from
+// miniaudio's real-time thread without the GIL) is deferred — for now,
+// Python drives the pipeline manually (useful for tests + early integration).
+//
+// Usage (Python):
+//   from vc_python import PyStreamingPipeline
+//   p = PyStreamingPipeline(block_size=1920)
+//   p.start()                              # spawn decoder thread (passthrough)
+//   p.push_input([0.0, 1.0, 2.0, ...])     # push mic samples
+//   out = [p.pop_output() for _ in range(N)]  # pull speaker samples
+//   p.stop()                               # join decoder thread
+//
+// `pop_output` returns `None` when the output ring is empty (decoder hasn't
+// caught up yet). Real miniaudio wiring will emit silence in that case.
+
+/// Python wrapper around `vc_native::StreamingPipeline`.
+///
+/// Owns two SPSC rings (input + output) and a decoder thread. The decoder
+/// thread is initially idle — `start()` spawns it with a passthrough
+/// `process_fn` (input → output, no-op conversion). A future task will allow
+/// callers to supply a real `process_fn` (e.g. the v2.0 encoder + DDSP +
+/// Vocos pipeline) instead of passthrough.
+#[pyclass(name = "StreamingPipeline")]
+struct PyStreamingPipeline {
+    inner: Option<StreamingPipeline>,
+}
+
+#[pymethods]
+impl PyStreamingPipeline {
+    /// Construct a new `StreamingPipeline` with the given block size.
+    ///
+    /// `block_size` is samples per decoder invocation (default 1920 = 80ms
+    /// at 24 kHz mono). The SPSC ring capacity is `block_size * 4`.
+    #[new]
+    #[pyo3(signature = (block_size=1920))]
+    fn new(block_size: usize) -> Self {
+        Self {
+            inner: Some(StreamingPipeline::new(block_size)),
+        }
+    }
+
+    /// Spawn the decoder thread with a passthrough `process_fn`.
+    ///
+    /// Idempotent — calling `start()` twice without an intervening `stop()`
+    /// is a silent no-op (the second call sees the ring halves already moved
+    /// into the first decoder thread).
+    ///
+    /// A future task will allow callers to supply a real `process_fn` (the
+    /// v2.0 encoder + DDSP + Vocos pipeline) instead of passthrough.
+    fn start(&mut self) -> PyResult<()> {
+        if let Some(ref mut p) = self.inner {
+            // Passthrough process_fn — just echoes input to output. Real
+            // voice-conversion wiring lands in P2.2; for now this is enough
+            // to verify the SPSC + decoder-thread plumbing end-to-end from
+            // Python.
+            p.start_decoder(|input: &[f32]| input.to_vec());
+        }
+        Ok(())
+    }
+
+    /// Signal the decoder thread to shut down and block until it joins.
+    /// Safe to call when not started (no-op).
+    fn stop(&mut self) -> PyResult<()> {
+        if let Some(ref mut p) = self.inner {
+            p.stop();
+        }
+        Ok(())
+    }
+
+    /// Push a batch of mic samples into the input ring. Samples that don't
+    /// fit (ring full — decoder hasn't kept up) are silently dropped.
+    ///
+    /// This is the Python-side entry point; the real miniaudio callback will
+    /// bypass the GIL entirely and call `StreamingPipeline::push_input`
+    /// directly on miniaudio's real-time thread.
+    fn push_input(&mut self, samples: Vec<f32>) -> PyResult<()> {
+        if let Some(ref mut p) = self.inner {
+            for s in samples {
+                // Drop on full — matches the v1.0 backpressure contract.
+                let _ = p.push_input(s);
+            }
+        }
+        Ok(())
+    }
+
+    /// Pull one processed speaker sample from the output ring.
+    /// Returns `None` if the ring is empty (decoder hasn't caught up yet).
+    fn pop_output(&mut self) -> Option<f32> {
+        self.inner.as_mut().and_then(|p| p.pop_output().ok())
+    }
+
+    /// True iff the decoder thread is running (started + not stopped).
+    #[getter]
+    fn is_running(&self) -> bool {
+        self.inner.as_ref().map(|p| p.is_running()).unwrap_or(false)
+    }
+
+    /// The configured block size (samples per decoder invocation).
+    #[getter]
+    fn block_size(&self) -> usize {
+        self.inner.as_ref().map(|p| p.block_size()).unwrap_or(0)
     }
 }
 
@@ -792,6 +903,7 @@ fn linear_stft_magnitude_np<'py>(
 fn vc_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RealtimeInfer>()?;
     m.add_class::<AudioConfigPy>()?;
+    m.add_class::<PyStreamingPipeline>()?;
     m.add_function(wrap_pyfunction!(sola_find_best_offset_py, m)?)?;
     m.add_function(wrap_pyfunction!(sola_crossfade_py, m)?)?;
     m.add_function(wrap_pyfunction!(synth_harmonics_py, m)?)?;
