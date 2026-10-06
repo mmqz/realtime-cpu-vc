@@ -6,10 +6,10 @@ audio:
   channels: 1
   format: paInt16
   block_size: 1920          # 80 ms chunk at 24 kHz
-  extra_size: 1920          # 80 ms look-ahead
+  extra_size: 200          # 80 ms look-ahead
   crossfade_size: 960       # 40 ms SOLA crossfade
   sola_search_size: 960     # 40 ms SOLA search
-  last_delay_size: 1920     # 80 ms last delay
+  last_delay_size: 200     # 80 ms last delay
   input_device: -1
   output_device: -1
 
