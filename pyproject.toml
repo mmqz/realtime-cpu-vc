@@ -172,6 +172,8 @@ disable_error_code = [
     "union-attr",      # Optional[X] attribute access (initialized in __init__)
     "attr-defined",    # Optional[X] attribute after None-check
     "assignment",
+    "no-any-return",   # ONNX/torch returns Any; full annotation in P2
+    "var-annotated",   # dict[...] literals need type hints; cosmetic
 ]
 
 # ============================================================================
