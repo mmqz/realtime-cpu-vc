@@ -18,6 +18,12 @@
 mod miniaudio_ffi;
 pub use miniaudio_ffi::{AudioDevice, MaDataCallback};
 
+// STFT + cached mel filter bank (OPT-3): Rust replacement for librosa on the
+// streaming path. `realfft` (R2C FFT) + cached Slaney mel triangles → ~1-2ms
+// per chunk vs. ~15-25ms for v1.0's Python librosa.stft. See `stft.rs`.
+mod stft;
+pub use stft::{linear_stft_magnitude, log_mel_spec, stft_magnitude, MelFilterBank};
+
 use wide::f32x4;
 
 // ============================================================

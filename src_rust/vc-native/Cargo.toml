@@ -7,6 +7,17 @@ license.workspace = true
 [dependencies]
 rtrb = { workspace = true }
 wide = { workspace = true }
+# STFT + mel filter bank hot path (OPT-3): replaces librosa in the streaming
+# chunk pipeline. `rustfft` is the underlying complex FFT; `realfft` wraps it
+# with a real→complex R2C FFT that exploits Hermitian symmetry to produce only
+# `n_fft/2+1` bins (half the cost of a full C2C FFT for real input).
+# `num-complex` is brought in explicitly so we can name `Complex<f32>` in our
+# public API (rustfft re-exports it as `rustfft::num_complex`, but a direct
+# dep is clearer and version-compatible — both rustfft 6.2 and realfft 3.4
+# pin to num-complex 0.4).
+rustfft = "6.2"
+realfft = "3.4"
+num-complex = "0.4"
 
 [build-dependencies]
 cc = { workspace = true }
