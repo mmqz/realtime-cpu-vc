@@ -31,6 +31,16 @@ pub use stft::{linear_stft_magnitude, log_mel_spec, stft_magnitude, MelFilterBan
 mod streaming_pipeline;
 pub use streaming_pipeline::StreamingPipeline;
 
+// Causal StreamingConv1d (OPT-14): stateful causal 1D convolution that
+// eliminates the algorithmic look-ahead latency of v1.0's centered-padding
+// Conv1d, removing the need for SOLA chunk-boundary crossfade. Maintains a
+// `(kernel_size - 1) * channels` sample state buffer across `process()` calls
+// — each call returns the same length as its input (zero added latency). The
+// placeholder convolution is identity; the real ONNX `Conv1d` with left-only
+// padding lands in OPT-15. See `causal_conv.rs` for the design rationale.
+mod causal_conv;
+pub use causal_conv::StreamingConv1dState;
+
 use wide::f32x4;
 
 // ============================================================
