@@ -1,0 +1,65 @@
+# v2 Hybrid Architecture config — OpenVoice v2 ReferenceEncoder + ResidualCoupling flow + F5-TTS Vocos
+# Use this config to enable the v2 hybrid architecture described in
+# docs/architecture.md (§v2 Hybrid Architecture).
+
+# Audio I/O (unchanged from default.yaml)
+audio:
+  sample_rate: 24000
+  channels: 1
+  format: paInt16
+  block_size: 1920          # 80 ms chunk at 24 kHz
+  extra_size: 1920          # 80 ms look-ahead (P1 tuned)
+  crossfade_size: 960       # 40 ms SOLA crossfade
+  sola_search_size: 960     # 40 ms SOLA search
+  last_delay_size: 1920     # 80 ms last delay
+  input_device: -1
+  output_device: -1
+
+# VAD (unchanged)
+vad:
+  enabled: true
+  aggressiveness: 2
+  silence_gate: true
+
+# v2 ORT sessions — note the new modules
+ort:
+  # v1 spine (kept): TinyVC content encoder + pitch (joint ONNX)
+  encoder_model: models/encoder.int8.onnx
+
+  # v2 NEW: OpenVoice v2 ReferenceEncoder (256-d speaker embedder, 0.76M, INT8 ~1 MB)
+  speaker_encoder_model: models/openvoice_ref_encoder.int8.onnx
+
+  # v2 NEW: OpenVoice v2 ResidualCoupling flow (8.7M, INT8 ~9 MB)
+  #         learned speaker disentanglement layer
+  speaker_flow_model: models/openvoice_residual_flow.int8.onnx
+
+  # v2 REPLACES: F5-TTS Vocos (13M, INT8 ~7 MB) instead of TinyVC DDSP
+  #              (drop source_net/filter_net from v1)
+  vocoder_model: models/vocos.int8.onnx
+
+  providers: [CPUExecutionProvider]
+  intra_op_num_threads: 2
+  inter_op_num_threads: 1
+
+# v2 Voice registry — much smaller than v1 kNN index
+voices:
+  # v1: path: models/voices.safetensors  (5 × 2.4 MB FP16 = 12 MB kNN index)
+  # v2: pattern matching se_<id>.pth files (5 × 256 × 2 bytes FP16 = 2.5 KB total)
+  registry_pattern: models/se_*.pth
+  default_voice_id: 0
+  # No more knn_top_k — replaced by direct embedding lookup
+
+# Optional high-quality F0 fallback (unchanged from default.yaml)
+pitch:
+  use_rmvpe_fallback: false
+  rmvpe_model: models/rmvpe.onnx
+
+# v2-specific notes
+v2_hybrid:
+  enabled: true
+  version: '2.0'
+  replaces_v1_knn: true
+  replaces_v1_ddsp: true
+  expected_speaker_similarity: '0.88-0.93'  # vs v1 0.85-0.90
+  expected_mos_uplift: '+0.2-0.3'           # vs v1 DDSP
+  expected_rss_mb: '~85'                    # vs v1 ~85-95
