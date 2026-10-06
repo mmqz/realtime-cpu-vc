@@ -145,6 +145,7 @@ module = [
     "transformers.*",
     "pyaudio.*",
     "webrtcvad.*",
+    "module.*",  # TinyVC upstream source under /home/z/my-project/repos/tinyvc/
 ]
 ignore_missing_imports = true
 
@@ -164,6 +165,7 @@ module = [
     "vc_realtime.vad",
     "vc_realtime.streaming",
     "vc_realtime.cli",
+    "vc_realtime.infer_v1",
 ]
 disable_error_code = [
     "type-arg",        # np.ndarray without NDArray parametrization

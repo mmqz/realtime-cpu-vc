@@ -29,25 +29,26 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 import numpy as np
+import numpy.typing as npt
 
 # ---------------------------------------------------------------------------
 # Audio I/O primitives
 # ---------------------------------------------------------------------------
 
 # A 1-D float32 array in [-1, 1]; sample rate is implied by the caller.
-MonoAudio = np.ndarray  # shape: [T_samples]
+MonoAudio = npt.NDArray[np.float32]  # shape: [T_samples]
 
 # A 2-D mel-spectrogram [B, n_mels, T_frames] used as ONNX input.
-MelSpec = np.ndarray
+MelSpec = npt.NDArray[np.float32]
 
 # A 3-D content feature tensor [B, C=768, T_frames] from the content encoder.
-ContentFeat = np.ndarray
+ContentFeat = npt.NDArray[np.float32]
 
 # A 1-D f0 track [T_frames] in Hz, or [B, T_frames] when batched.
-F0 = np.ndarray
+F0 = npt.NDArray[np.float32]
 
 # A 1-D energy track [T_frames], or [B, T_frames] when batched.
-Energy = np.ndarray
+Energy = npt.NDArray[np.float32]
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ class SpeakerEncoder(Protocol):
       if ``voice_id`` was not loaded.
     """
 
-    def encode_reference(self, ref_mel_spec: MelSpec) -> np.ndarray:
+    def encode_reference(self, ref_mel_spec: MelSpec) -> npt.NDArray[np.float32]:
         """Return a 1-D float32 speaker embedding for the given mel-spec."""
         ...
 
@@ -123,7 +124,7 @@ class SpeakerEncoder(Protocol):
         """Pre-load all reference voice embeddings from ``pattern`` (glob)."""
         ...
 
-    def get_speaker_embedding(self, voice_id: int) -> np.ndarray:
+    def get_speaker_embedding(self, voice_id: int) -> npt.NDArray[np.float32]:
         """Return the pre-loaded 1-D float32 embedding for ``voice_id``."""
         ...
 
@@ -174,7 +175,7 @@ class Vocoder(Protocol):
     * Output: ``[B, 1, T_samples]`` float32 in [-1, 1] at 24 kHz.
     """
 
-    def decode(self, *args, **kwargs) -> np.ndarray:
+    def decode(self, *args: object, **kwargs: object) -> npt.NDArray[np.float32]:
         """Return a 1-channel float32 waveform at 24 kHz, shape ``[B, 1, T]``."""
         ...
 
@@ -233,7 +234,9 @@ class StreamingInfer(Protocol):
     * ``stop()`` is idempotent and safe to call from any thread.
     """
 
-    def audio_callback(self, in_data, frame_count, time_info, status):
+    def audio_callback(
+        self, in_data: bytes, frame_count: int, time_info: object, status: int
+    ) -> tuple[bytes, int]:
         """PyAudio-compatible callback; returns ``(out_bytes, paContinue)``."""
         ...
 
