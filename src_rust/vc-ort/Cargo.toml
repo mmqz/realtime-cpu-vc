@@ -9,6 +9,13 @@ ort = { workspace = true }
 tract-onnx = { workspace = true }
 ndarray = { workspace = true }
 thiserror = "1.0"
+# anyhow is tract's TractError type alias; needed for `?`-converting tract
+# results into our InferError. Re-exported by tract-onnx prelude, but adding
+# the dep here makes the `From<anyhow::Error>` impl robust to version skew.
+anyhow = "1.0"
+
+[dev-dependencies]
+# (none — tests only use workspace deps)
 
 # vc-ort: ONNX inference orchestration in Rust
 # Uses `ort` crate (Rust→ONNXRuntime bindings) as primary, `tract-onnx` as fallback

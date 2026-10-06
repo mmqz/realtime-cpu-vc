@@ -18,13 +18,17 @@ description = "Real-time CPU Voice Conversion — v2.0 Rust+C implementation"
 
 [workspace.dependencies]
 # ONNXRuntime Rust bindings — auto-downloads prebuilt libonnxruntime for x86_64+arm64-linux/macOS/Windows
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["download-binaries"] }
+# `download-binaries` fetches libonnxruntime; `tls-rustls` provides TLS for the download step;
+# `ndarray` enables Tensor::from_array <-> ndarray interop; `std` enables std support;
+# `api-27` selects ONNXRuntime 1.27 C API; `copy-dylibs` copies the .so/.dylib next to the binary.
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["download-binaries", "tls-rustls", "ndarray", "std", "api-27", "copy-dylibs"] }
 # Pure-Rust ONNX inference — production-grade, INT8 + pulsification
 tract-onnx = "0.23.0"
 # sherpa-onnx Rust crate — VAD (silero), speaker encoder (CAMPPlus), denoiser (GTNCRN)
 sherpa-onnx = { version = "1.13.8", features = ["static"] }
-# ndarray for tensor ops
-ndarray = "0.16"
+# ndarray for tensor ops — must match the version used by both `ort` and `tract-data`
+# (both depend on ndarray 0.17) so ArrayD<f32> implements their interop traits.
+ndarray = "0.17"
 # PyO3 for Python bindings (in vc-python only)
 pyo3 = { version = "0.22", features = ["extension-module"] }
 # Audio I/O — miniaudio vendor'd directly via cc::Build (skip stale miniaudio-rs crate)
