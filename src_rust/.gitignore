@@ -1,0 +1,4 @@
+# Rust build artifacts — never commit
+/target
+**/*.rs.bk
+*.pdb
