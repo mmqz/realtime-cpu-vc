@@ -494,6 +494,26 @@ mod tests {
         assert!(sess.is_ok(), "ORT load failed: {:?}", sess.err());
     }
 
+    /// P2.1-1: Verify the TinyVC encoder (SSLFeatureEstimator +
+    /// PitchEstimator, exported by `scripts/export_tinyvc_encoder_onnx.py`)
+    /// loads cleanly via ORT. This is the 5th v3-hybrid ONNX model — once it
+    /// exists, `V3HybridSessions::load_all` works end-to-end.
+    #[test]
+    fn test_load_encoder() {
+        let path = format!("{MODELS_DIR}/encoder.int8.onnx");
+        if !have(&path) {
+            eprintln!("SKIP: {path} not found");
+            return;
+        }
+        let sess = InferenceSession::load(&path, Backend::Ort);
+        assert!(sess.is_ok(), "ORT load failed: {:?}", sess.err());
+        let s = sess.unwrap();
+        // TinyVC encoder: input "spectrogram" [B, 961, T],
+        // outputs "content" [B, 768, T] + "f0" [B, 512, T].
+        assert!(s.input_count() == 1, "expected 1 input, got {}", s.input_count());
+        assert!(s.output_count() == 2, "expected 2 outputs, got {}", s.output_count());
+    }
+
     #[test]
     fn test_load_missing_file_errors_notfound() {
         let path = "/nonexistent/missing.int8.onnx";
