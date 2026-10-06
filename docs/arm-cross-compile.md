@@ -9,15 +9,18 @@ the dev host.
 
 | Step | x86_64 (host) | aarch64 (cross) |
 |------|---------------|-----------------|
-| `cargo check` | ✅ passes | ✅ passes (Rust code ARM-compatible) |
+| `cargo check` | ✅ passes | ✅ passes (no C cross-compiler needed — OPT-17) |
 | `cargo build`  | ✅ passes | ⚠️ requires `gcc-aarch64-linux-gnu` for miniaudio |
 | `cargo test`   | ✅ passes | n/a (run on device) |
 
 The `cargo check --target aarch64-unknown-linux-gnu -p vc-native` step
 verifies the full Rust dependency tree (rustfft, realfft, num-complex,
-rtrb, wide, …) compiles cleanly for ARM64. The only blocker for a full
-`cargo build` is the missing C cross-compiler for the `cc`-crate build
-script that compiles `miniaudio.c`.
+rtrb, wide, …) compiles cleanly for ARM64. As of OPT-17 the build.rs
+detects cross-compilation and emits `cargo:rustc-cfg=no_miniaudio` when
+no C cross-linker is available, so `cargo check` works on a bare dev
+host. The only blocker for a full `cargo build` is the missing C
+cross-compiler for the `cc`-crate build script that compiles
+`miniaudio.c`.
 
 ## Prerequisites
 
@@ -51,9 +54,23 @@ cross build --target aarch64-unknown-linux-gnu -p vc-native --release
 
 ### Skipping miniaudio for an inference-only ARM build
 
-If you don't need audio I/O on the ARM target, you can move the
-vendored miniaudio aside and build.rs will emit a warning and skip the
-C compilation — vc-native still compiles as inference-only:
+As of OPT-17, `cargo check --target aarch64` skips miniaudio
+automatically when `TARGET != HOST` and no C cross-compiler is found —
+no manual intervention needed. The build.rs probes for:
+
+1. `CC_<target>` env var (e.g. `CC_aarch64_unknown_linux_gnu`)
+2. `TARGET_CC` env var
+3. The `aarch64-linux-gnu-gcc` / `arm-linux-gnueabihf-gcc` binary on PATH
+
+If none are present, it emits `cargo:rustc-cfg=no_miniaudio` and exits
+without invoking the `cc` crate, so the build script can't fail on a
+missing C toolchain. The Rust side still compiles — `extern "C"`
+declarations in `miniaudio_ffi.rs` are unresolved only at link time,
+which doesn't affect `cargo check` (which doesn't link).
+
+If you also want to skip miniaudio for a *full* `cargo build` (so the
+linker doesn't fail on unresolved symbols), you can still move the
+vendored file aside:
 
 ```bash
 # Temporarily hide miniaudio.c so build.rs takes its "skip C" path
@@ -91,17 +108,93 @@ target" warnings on every `cargo` invocation. It now scopes the flag to
 `[target.aarch64-unknown-linux-gnu]` section pointing at
 `aarch64-linux-gnu-gcc`.
 
+## vc-python (PyO3) Cross-Compile
+
+PyO3 cross-compilation requires a Python sysroot for the target
+architecture. This is more complex than pure Rust crates (PyO3 embeds
+the build-host Python's interpreter ABI into the extension module).
+
+### Option A: Build on-device (recommended)
+
+The simplest path — no cross-toolchain hassles, the resulting wheel
+matches the device's native Python ABI.
+
+```bash
+# On the ARM device (Pi 5 / RK3588) running a 64-bit OS:
+# 1. Install Rust + Python dev headers
+sudo apt update && sudo apt install -y python3-dev cargo rustc
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+
+# 2. Clone + build from source
+git clone <repo> && cd <repo>/prototype/src_rust/vc-python
+maturin build --release
+pip install --user target/wheels/*.whl
+```
+
+### Option B: Cross-compile with Docker (maturin)
+
+Maturin publishes official Docker images with the right target Python
+already inside. This is the easiest way to produce a manylinux wheel
+from an x86 host.
+
+```bash
+# From the repo root (where src_rust/vc-python/Cargo.toml lives):
+docker run --rm -v "$(pwd):/io" \
+    ghcr.io/pyo3/maturin:main-aarch64 \
+    build --release --out /io/dist
+# Produces: dist/vc_python-<ver>-cp<py>-cp<py>-linux_aarch64.whl
+```
+
+### Option C: Cross-compile with `cross` (requires Docker)
+
+For a raw `.so` (not a wheel), `cross` is a thin Docker wrapper around
+`cargo build`. You'll need to extend the image with Python dev headers
+for the target arch — see `Cross.toml`.
+
+```bash
+cargo install cross
+cross build --target aarch64-unknown-linux-gnu -p vc-python --release
+# Note: needs Python dev headers (libpython3-dev:arm64) inside the
+# Docker image. The default `cross` image does NOT include them —
+# build a custom image extending ghcr.io/cross-rs/aarch64-unknown-linux-gnu
+# with `apt-get install -y python3-dev:arm64` + multiarch setup.
+```
+
+### Known Limitations
+
+- PyO3 `extension-module` feature pins the wheel to the build Python's
+  ABI (CPython 3.11 wheels won't load on 3.12, etc.).
+- For broader compatibility, use the `abi3-py310` feature in
+  `vc-python/Cargo.toml` — abi3 wheels load on any CPython ≥ 3.10:
+  ```toml
+  pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
+  ```
+- ONNXRuntime aarch64 binary: download the
+  `onnxruntime-linux-aarch64-*.tgz` artifact from
+  <https://github.com/microsoft/onnxruntime/releases> and place its
+  `libonnxruntime.so` somewhere `LD_LIBRARY_PATH` (or the rpath) can
+  find it on the device.
+- miniaudio for vc-python's audio I/O path is *not* needed for the
+  Python wheel itself — vc-python calls vc-native via PyO3, and vc-native
+  is the crate that links miniaudio. So building vc-python with maturin
+  will *not* need the C cross-compiler for miniaudio unless you also
+  build `-p vc-native` for aarch64 (see OPT-17 above).
+
 ## Known Issues
 
-- **vc-python (PyO3)** — can't cross-compile easily; PyO3 needs Python
-  dev headers for the target arch (`aarch64` Python). Build natively on
-  the device, or use `pyo3-build-config` overrides with a sysroot.
+- **vc-python (PyO3)** — see the dedicated section above; the easiest
+  path is on-device builds via `maturin build`. The Docker option
+  (`ghcr.io/pyo3/maturin:main-aarch64`) produces a manylinux wheel from
+  an x86 host.
 - **vc-ort** — needs `libonnxruntime.so` for aarch64 (download the
   aarch64 build from the ORT releases page). The build script looks for
   it via `ORT_LIB_DIR`.
-- **miniaudio** — needs the C cross-compiler (`gcc-aarch64-linux-gnu`).
-  Without it, `cargo check` still works (build.rs takes its "skip C"
-  fallback) but `cargo build` fails in the `cc`-crate build script.
+- **miniaudio** — needs the C cross-compiler (`gcc-aarch64-linux-gnu`)
+  for a full `cargo build` link. As of OPT-17, `cargo check` no longer
+  needs it: build.rs detects `TARGET != HOST` with no `CC_<target>` /
+  `TARGET_CC` / cross-gcc binary and emits `cargo:rustc-cfg=no_miniaudio`
+  instead of running the `cc`-crate build script.
 - **`target-cpu=native`** — must NOT be set globally; it must be scoped
   to `[target.x86_64-unknown-linux-gnu]` or it pollutes the aarch64
   invocation with x86 feature flags (warnings, no functional impact).
