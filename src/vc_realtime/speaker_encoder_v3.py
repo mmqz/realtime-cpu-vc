@@ -1,76 +1,179 @@
 """
-modules/speaker_encoder_v3.py — Spark-TTS BiCodec SpeakerEncoder (ECAPA-TDNN c512 + Perceiver + ResidualFSQ)
-==============================================================================================================
-Source: SparkAudio/Spark-TTS/sparktts/models/bicodec.py (SpeakerEncoder class)
+modules/speaker_encoder_v3.py — Spark-TTS BiCodec SpeakerEncoder wrapper.
 
-v3 hybrid upgrade over v2:
-  v2: OpenVoice v2 ReferenceEncoder (256-d, 0.76M, 1MB INT8)
-  v3: Spark-TTS BiCodec SpeakerEncoder (512-d + 48-byte FSQ code, 6-12M, ~5MB INT8)
-  Expected uplift: +1-2% speaker similarity, +4MB RAM (still <100MB total)
+================================================================
+Source: SparkAudio/Spark-TTS/sparktts/modules/speaker/speaker_encoder.py
+       (ECAPA-TDNN c512 + PerceiverResampler + ResidualFSQ + Linear → d_vector)
 
-Architecture (3 sub-modules):
-  (1) ECAPA-TDNN c512 (~5M params) — current SOTA speaker encoder architecture
-      - Input: mel-spec [B, n_mels=80, T_frames]
-      - Output: frame-level 512-d features [B, T, 512]
-  (2) PerceiverResampler(num_latents=32, ~1M params) — learning-based attention pool
-      - Input: frame-level features [B, T, 512]
-      - Output: 32 latent tokens [B, 32, 512]  (vs simple mean-pooling in v2)
-  (3) ResidualFSQ(levels=[4,4,4,4,4,4], ~0.5M params) — quantize each latent token to 6×2-bit codes
-      - Input: 32 latent tokens [B, 32, 512]
-      - Output: 32 × 6 = 192 code indices per voice, packed into 48 bytes (6 bits × 32 × 6 = 2304 bits ≈ 288 bytes raw, or 48 bytes compressed)
-      - FSQ vs VQ advantage: no codebook training needed, smaller quantization error
+P3-1 KEY CORRECTIONS (vs the original speculative v3 spec):
+  - SPARK_N_MELS = 128 (NOT 80)
+  - SPARK_HOP    = 320 (NOT 200) → 50 Hz frame rate @ 16 kHz
+  - SPARK_OUT_DIM = 1024 (NOT 512) — Spark outputs 1024-d d_vector
+  - Input shape: [B, T, 128] (time-first channels-last)
+  - 3 outputs: d_vector [B, 1024] + fsq_indices [B, 1, 32] int64
+    + x_vector [B, 1024]
+  - FSQ is 32 tokens × 1 quantizer, each index ∈ [0, 4095] (12 bits)
+    → 48 bytes packed per voice (32 × 12 = 384 bits = 48 bytes)
+
+v3 vs v2 upgrade:
+  v2: OpenVoice v2 ReferenceEncoder (256-d, 0.76M, 3 MB FP32 / 2.3 MB INT8)
+  v3: Spark-TTS BiCodec SpeakerEncoder (1024-d + 48-byte FSQ, 14.06M,
+       55 MB FP32 / ~25-30 MB INT8)
+  Expected uplift: richer 1024-d speaker disentanglement, smaller per-voice
+  storage (48 bytes FSQ + 2 KB FP16 d_vector = 2.1 KB per voice) and
+  hash-keyed O(1) retrieval possible via the FSQ codes.
 
 Per-voice storage:
-  v1 kNN index:    5 × 11.5 MB / 5 = 2.3 MB per voice (768-d × 1500 frames × FP16)
-  v2 OpenVoice:    5 × 256 × 2 bytes = 512 bytes per voice (256-d FP16)
-  v3 Spark BiCodec: 5 × 48 bytes per voice (FSQ discrete codes)  ← O(1) hash-lookupable!
+  v1 kNN index:        5 × 11.5 MB = 57.5 MB (`voices.pt`)
+  v2 OpenVoice 256-d:  5 × 512 B  = 2.5 KB (`voices_v2.safetensors`)
+  v3 Spark BiCodec:   5 × (2 KB FP16 d_vector + 48 B FSQ) = ~10.5 KB
+                       (`voices_v3.safetensors`)
 
-Usage:
-  enc = BiCodecSpeakerEncoder('models/spark_speaker_encoder.onnx')
-  # Offline: encode 30 s reference -> FSQ code (48 bytes)
-  fsq_code = enc.encode_reference(ref_mel_spec)
-  with open('models/se_0.fsq', 'wb') as f:
-      f.write(fsq_code.tobytes())
-  # Runtime: load all 5 FSQ codes, do O(1) lookup by voice_id
-  enc.load_voice_registry('models/se_*.fsq')
-  se_target = enc.get_speaker_embedding(voice_id=0)  # returns 512-d float32 (decoded from FSQ)
+Usage (offline registration):
+
+    enc = BiCodecSpeakerEncoder('models/spark_speaker_encoder.onnx')
+    mel = make_spark_mel_spec(wav_16k)             # [1, T, 128]
+    out = enc.encode_reference(mel)               # dict
+    d_vector = out['d_vector']                    # [1024]
+    fsq_bytes = out['fsq_bytes']                  # 48 bytes packed
+    enc.load_voice_registry('models/voices_v3.safetensors')
+    se = enc.get_speaker_embedding(voice_id=0)    # [1024]
 """
+
+from __future__ import annotations
 
 import os
 from glob import glob
+from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
 
 
-class BiCodecSpeakerEncoder:
-    """Spark-TTS BiCodec SpeakerEncoder wrapper (ORT).
+# ---------------------------------------------------------------------------
+# Constants — confirmed in P3-1 from BiCodec/config.yaml + ONNX parity check.
+# ---------------------------------------------------------------------------
+SPARK_SAMPLE_RATE = 16000      # Spark-TTS uses 16 kHz input
+SPARK_N_FFT = 1024
+SPARK_HOP = 320                # 16 kHz / 320 = 50 Hz frame rate
+SPARK_N_MELS = 128             # NOT 80 (config.yaml: mel_params.num_mels=128)
+SPARK_OUT_DIM = 1024           # d_vector output dim (config.yaml: out_dim=1024)
+SPARK_FSQ_SHAPE = (1, 32)     # 32 tokens × 1 quantizer (fsq_num_quantizers=1)
+SPARK_FSQ_BYTES_PACKED = 48   # 32 tokens × 12 bits = 384 bits = 48 bytes
+SPARK_REF_DURATION_S = 30.0   # truncate references to 30 s (Spark default)
 
-    Three sub-modules in a single ONNX graph (or three separate graphs):
-      1. ECAPA-TDNN (frame-level 512-d features)
-      2. PerceiverResampler (32 latent tokens)
-      3. ResidualFSQ (48-byte discrete code)
+
+# ---------------------------------------------------------------------------
+# FSQ packing helpers — 32 int64 indices (each in [0, 4095]) ↔ 48 bytes.
+# We pack 12 bits per index, LSB-first, into a 48-byte little-endian bitstream.
+# ---------------------------------------------------------------------------
+def pack_fsq_to_48_bytes(fsq_indices: np.ndarray) -> bytes:
+    """Pack 32 FSQ indices (each ∈ [0, 4095], 12 bits) → 48 bytes.
+
+    Parameters
+    ----------
+    fsq_indices : np.ndarray, shape [..., 32] or [..., 1, 32] int64
+
+    Returns
+    -------
+    bytes of length 48.
+    """
+    indices = np.asarray(fsq_indices).astype(np.int64).flatten()
+    if indices.size != 32:
+        raise ValueError(f"Expected 32 FSQ indices, got {indices.size}")
+    if indices.min() < 0 or indices.max() > 4095:
+        raise ValueError(
+            f"FSQ index out of [0, 4095] range: "
+            f"min={int(indices.min())}, max={int(indices.max())}"
+        )
+
+    packed = bytearray(48)
+    bit_pos = 0
+    for idx in indices:
+        idx_int = int(idx)
+        for bit_i in range(12):
+            bit_val = (idx_int >> bit_i) & 1
+            byte_pos = bit_pos // 8
+            bit_in_byte = bit_pos % 8
+            packed[byte_pos] |= (bit_val << bit_in_byte)
+            bit_pos += 1
+    return bytes(packed)
+
+
+def unpack_fsq_from_48_bytes(packed: bytes) -> np.ndarray:
+    """Inverse of pack_fsq_to_48_bytes → np.ndarray [32] int64."""
+    if len(packed) != 48:
+        raise ValueError(f"Expected 48 bytes, got {len(packed)}")
+    indices = np.zeros(32, dtype=np.int64)
+    bit_pos = 0
+    for i in range(32):
+        idx = 0
+        for bit_i in range(12):
+            byte_pos = bit_pos // 8
+            bit_in_byte = bit_pos % 8
+            bit_val = (packed[byte_pos] >> bit_in_byte) & 1
+            idx |= (bit_val << bit_i)
+            bit_pos += 1
+        indices[i] = idx
+    return indices
+
+
+class BiCodecSpeakerEncoder:
+    """Spark-TTS BiCodec SpeakerEncoder ONNX wrapper (P3-1 export).
+
+    The ONNX graph is the union of SpeakerEncoder.forward + .tokenize paths,
+    re-implemented by ``scripts/export_spark_bicodec_onnx.py`` so that a
+    single forward pass produces:
+
+      - ``d_vector``    [B, 1024] float32  — speaker conditioning for flow
+      - ``fsq_indices`` [B, 1, 32] int64   — 32 12-bit FSQ codes per voice
+      - ``x_vector``    [B, 1024] float32  — auxiliary ECAPA-TDNN pooled emb
+
+    Input is a mel-spec [B, T, 128] computed at 16 kHz with hop=320 (50 Hz
+    frame rate), n_fft=1024, 128 mel bins, fmin=0, fmax=8000, power=2.0.
     """
 
-    SPARK_SAMPLE_RATE = 16000  # Spark-TTS uses 16 kHz input
-    SPARK_N_FFT = 1024
-    SPARK_HOP = 200  # ~80 Hz frame rate (16 kHz / 200)
-    SPARK_N_MELS = 80
+    SPARK_SAMPLE_RATE = SPARK_SAMPLE_RATE
+    SPARK_N_FFT = SPARK_N_FFT
+    SPARK_HOP = SPARK_HOP
+    SPARK_N_MELS = SPARK_N_MELS
+    SPARK_OUT_DIM = SPARK_OUT_DIM
+    SPARK_FSQ_BYTES_PACKED = SPARK_FSQ_BYTES_PACKED
 
-    def __init__(self, model_path: str, intra_op_threads: int = 2, use_int8: bool = True):
-        """Load BiCodec SpeakerEncoder ONNX.
+    def __init__(
+        self,
+        model_path: str | Path = "models/spark_speaker_encoder.onnx",
+        intra_op_threads: int = 2,
+        use_int8: bool = True,
+    ):
+        """Load the Spark BiCodec SpeakerEncoder ONNX (with INT8 fallback).
 
-        Auto-prefer INT8 variant if available.
+        Parameters
+        ----------
+        model_path : str | Path
+            Path to ``spark_speaker_encoder.onnx`` (FP32, 55 MB) or
+            ``spark_speaker_encoder.int8.onnx`` (P3-2 INT8 quantized,
+            ~25-30 MB).
+        intra_op_threads : int
+            ONNX intra-op thread count (default 2 — keeps CPU contention
+            low for the realtime path; the Spark path is offline-only).
+        use_int8 : bool
+            If True (default), prefer ``spark_speaker_encoder.int8.onnx``
+            when present, else fall back to the FP32 ONNX.
         """
+        model_path = Path(model_path)
         if use_int8:
-            int8_path = model_path.replace(".onnx", ".int8.onnx")
-            if os.path.exists(int8_path):
+            int8_path = model_path.with_name(
+                model_path.name.replace(".onnx", ".int8.onnx")
+            )
+            if int8_path.exists():
                 model_path = int8_path
                 print(f"  BiCodecSpeakerEncoder: using INT8 variant {int8_path}")
-        if not os.path.exists(model_path):
+        if not model_path.exists():
             raise FileNotFoundError(
-                f"Spark-TTS BiCodec SpeakerEncoder ONNX not found at {model_path}. "
-                f"Export from Spark-TTS source (sparktts/models/bicodec.py)."
+                f"Spark-TTS BiCodec SpeakerEncoder ONNX not found at "
+                f"{model_path}. Export with "
+                f"`python3 scripts/export_spark_bicodec_onnx.py`."
             )
 
         so = ort.SessionOptions()
@@ -78,113 +181,186 @@ class BiCodecSpeakerEncoder:
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so, providers=["CPUExecutionProvider"]
+            str(model_path), sess_options=so, providers=["CPUExecutionProvider"]
         )
-        self.voice_registry = {}  # voice_id -> 512-d np.float32 (decoded from FSQ)
-        self.fsq_codes = {}  # voice_id -> 192-d int32 (raw FSQ codes)
+        # voice_id -> {'d_vector': [1024], 'fsq_bytes': bytes(48)}
+        self.voice_registry: dict[int, dict[str, object]] = {}
 
-    def encode_reference(self, ref_mel_spec: np.ndarray) -> np.ndarray:
+    # ------------------------------------------------------------------
+    # Mel-spec computation helpers
+    # ------------------------------------------------------------------
+    @classmethod
+    def make_mel_spec(cls, wav_16k: np.ndarray) -> np.ndarray:
+        """Compute the Spark BiCodec mel-spec input.
+
+        Parameters
+        ----------
+        wav_16k : np.ndarray [L_samples] float32 at 16 kHz
+
+        Returns
+        -------
+        np.ndarray [1, T_frames, 128] float32 — time-first channels-last,
+        normalized to roughly [0, 4] (matches Spark's `mel_processing.py`).
+        """
+        import librosa
+
+        mel = librosa.feature.melspectrogram(
+            y=wav_16k.astype(np.float32),
+            sr=cls.SPARK_SAMPLE_RATE,
+            n_fft=cls.SPARK_N_FFT,
+            hop_length=cls.SPARK_HOP,
+            n_mels=cls.SPARK_N_MELS,
+            fmin=0,
+            fmax=8000,
+            power=2.0,
+        )
+        mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
+        mel_db = (mel_db + 80.0) / 20.0  # normalize to [0, 4] roughly
+        return mel_db.T[None, ...]  # [1, T, 128]
+
+    # ------------------------------------------------------------------
+    # ONNX forward
+    # ------------------------------------------------------------------
+    def encode_reference(self, ref_mel_spec: np.ndarray) -> dict:
         """Run BiCodec SpeakerEncoder on a reference mel-spec.
 
-        Args:
-            ref_mel_spec: [B, 80, T_frames] float32 at ~80 Hz frame rate
-        Returns:
-            se: [512] float32 (the last latent token, or pooled) — for use as
-                conditioning vector to downstream flow
-            Also internally caches the 192-d FSQ code for O(1) retrieval.
-        """
-        input_name = self.session.get_inputs()[0].name
-        outputs = self.session.run(None, {input_name: ref_mel_spec.astype(np.float32)})
-        # Spark-TTS's BiCodec SpeakerEncoder returns multiple outputs:
-        #   [0]: frame-level features [B, T, 512]  (from ECAPA-TDNN)
-        #   [1]: latent tokens [B, 32, 512]        (from PerceiverResampler)
-        #   [2]: FSQ codes [B, 32, 6]               (from ResidualFSQ, 6 codes per token)
-        # For conditioning downstream flow, we use the mean of the 32 latents.
-        latents = outputs[1]  # [B, 32, 512]
-        fsq_codes = outputs[2]  # [B, 32, 6]
-        se = latents.mean(axis=1)  # [B, 512]
-        if se.shape[0] == 1:
-            se = se[0]  # [512]
-        # Cache FSQ codes (32 × 6 = 192 int32 codes per voice, packed into 48 bytes when packed as 6-bit)
-        self.fsq_codes[len(self.fsq_codes)] = fsq_codes[0].flatten()  # [192]
-        return se
+        Parameters
+        ----------
+        ref_mel_spec : np.ndarray [B, T, 128] float32 (time-first channels-last)
 
-    def load_voice_registry(self, pattern: str = "models/se_*.fsq"):
-        """Load all se_*.fsq files (48-byte each) into self.voice_registry.
-
-        The .fsq files contain 48 bytes of FSQ codes per voice. To get the 512-d
-        embedding for downstream flow conditioning, we need to decode FSQ → latent.
-        For simplicity, we also accept .pth files containing 512-d float vectors
-        (saved during registration alongside .fsq for forward use).
+        Returns
+        -------
+        dict with:
+          'd_vector'    : np.ndarray [B, 1024] float32
+          'fsq_indices' : np.ndarray [B, 1, 32] int64
+          'x_vector'    : np.ndarray [B, 1024] float32
+          'fsq_bytes'   : bytes of length 48 × B (packed FSQ codes for voice 0)
         """
+        x = np.ascontiguousarray(ref_mel_spec.astype(np.float32))
+        if x.ndim != 3:
+            raise ValueError(f"Expected [B, T, 128], got shape {x.shape}")
+        if x.shape[-1] != self.SPARK_N_MELS:
+            raise ValueError(
+                f"Expected last dim = {self.SPARK_N_MELS} (n_mels), got {x.shape[-1]}"
+            )
+        input_name = self.session.get_inputs()[0].name  # 'mel_spec'
+        outputs = self.session.run(None, {input_name: x})
+        # P3-1 verified output order: d_vector, fsq_indices, x_vector
+        d_vector = outputs[0]      # [B, 1024] float32
+        fsq_indices = outputs[1]   # [B, 1, 32] int64
+        x_vector = outputs[2]      # [B, 1024] float32
+        # Pack FSQ for the first item in the batch (typical offline use).
+        fsq_bytes = pack_fsq_to_48_bytes(fsq_indices[0])
+        return {
+            "d_vector": d_vector,
+            "fsq_indices": fsq_indices,
+            "x_vector": x_vector,
+            "fsq_bytes": fsq_bytes,
+        }
+
+    # ------------------------------------------------------------------
+    # Voice registry (offline storage format)
+    # ------------------------------------------------------------------
+    def load_voice_registry(self, path: str | Path = "models/voices_v3.safetensors") -> None:
+        """Load pre-computed Spark embeddings from voices_v3.safetensors.
+
+        File format (produced by :meth:`V3Infer.register_voice`):
+
+            voice_<id>_dvec : torch.Tensor [1024] float16   (1024 × 2 = 2048 B)
+            voice_<id>_fsq  : torch.Tensor [48]   uint8     (48 B packed)
+
+        Side effects
+        ------------
+        Populates ``self.voice_registry[voice_id] = {'d_vector': [1024],
+        'fsq_bytes': bytes}``.
+        """
+        path = Path(path)
         self.voice_registry.clear()
-        # Load .pth (512-d float vector for runtime conditioning)
-        for path in sorted(glob(pattern.replace(".fsq", ".pth"))):
-            stem = os.path.splitext(os.path.basename(path))[0]
+        if not path.exists():
+            print(f"  Voice registry: {path} not found (no voices loaded)")
+            return
+        try:
+            from safetensors.torch import load_file
+        except ImportError as e:  # pragma: no cover
+            raise RuntimeError(
+                "safetensors is required to load voices_v3.safetensors; "
+                "install with `pip install safetensors`."
+            ) from e
+        tensors = load_file(str(path))
+        # First pass: allocate per-voice dicts.
+        for key in tensors:
             try:
-                voice_id = int(stem.split("_")[-1])
-            except ValueError:
-                continue
-            import torch
-
-            se = torch.load(path).numpy().astype(np.float32)
-            if se.shape == (512,):
-                self.voice_registry[voice_id] = se
-                print(f"  Loaded voice {voice_id}: {path} (512-d)")
-        # Optionally load .fsq (48-byte) for hash-keyed O(1) retrieval fallback
-        for path in sorted(glob(pattern)):
-            stem = os.path.splitext(os.path.basename(path))[0]
+                vid = int(key.rsplit("_", 1)[0].rsplit("_", 1)[-1])
+            except (ValueError, IndexError):
+                # Fallback parse: voice_<id>_<suffix>
+                try:
+                    vid = int(key.split("_")[1])
+                except (ValueError, IndexError):
+                    continue
+            self.voice_registry.setdefault(vid, {})
+        # Second pass: populate fields.
+        for key, tensor in tensors.items():
+            # key format: voice_<id>_dvec / voice_<id>_fsq
             try:
-                voice_id = int(stem.split("_")[-1])
-            except ValueError:
+                vid = int(key.split("_")[1])
+            except (ValueError, IndexError):
                 continue
-            with open(path, "rb") as f:
-                self.fsq_codes[voice_id] = np.frombuffer(f.read(), dtype=np.uint8)
-        print(f"  Voice registry: {len(self.voice_registry)} voices loaded")
+            if key.endswith("_dvec"):
+                arr = tensor.float().numpy().astype(np.float32)  # [1024]
+                self.voice_registry[vid]["d_vector"] = arr
+            elif key.endswith("_fsq"):
+                arr = tensor.numpy().astype(np.uint8)  # [48]
+                self.voice_registry[vid]["fsq_bytes"] = arr.tobytes()
+        print(
+            f"  Voice registry: {len(self.voice_registry)} voices loaded from {path}"
+        )
 
     def get_speaker_embedding(self, voice_id: int) -> np.ndarray:
-        """O(1) lookup of the 512-d embedding for the given voice."""
+        """O(1) lookup of the 1024-d Spark d_vector for the given voice.
+
+        Returns
+        -------
+        np.ndarray [1024] float32 — the d_vector (speaker conditioning).
+
+        Raises
+        ------
+        KeyError if the voice is not in the registry.
+        """
         if voice_id not in self.voice_registry:
             raise KeyError(
-                f"voice_id {voice_id} not in registry (loaded: {list(self.voice_registry.keys())})"
+                f"voice_id {voice_id} not in registry "
+                f"(loaded: {list(self.voice_registry.keys())})"
             )
-        return self.voice_registry[voice_id]
+        entry = self.voice_registry[voice_id]
+        if "d_vector" not in entry:
+            raise KeyError(
+                f"voice_id {voice_id} registry entry missing 'd_vector' field"
+            )
+        return entry["d_vector"]
 
-    def lookup_by_fsq_hash(self, ref_fsq_code: np.ndarray) -> int:
-        """O(1) hash-based retrieval of voice_id by FSQ code.
+    def lookup_by_fsq_hash(self, ref_fsq_bytes: bytes) -> int:
+        """O(1) hash-based retrieval of voice_id by FSQ byte string.
 
         Useful when the reference audio is processed at runtime (instead of
         voice_id being known). For our 5-fixed-voice setup, voice_id is known
         so direct lookup is sufficient. This method is for future extension
         to arbitrary unseen reference matching.
         """
-        for vid, code in self.fsq_codes.items():
-            if np.array_equal(code, ref_fsq_code):
+        for vid, entry in self.voice_registry.items():
+            if entry.get("fsq_bytes") == ref_fsq_bytes:
                 return vid
         raise KeyError("FSQ code not in registry")
 
 
-def make_spark_mel_spec(audio: np.ndarray, sr: int = 16000) -> np.ndarray:
-    """Compute mel-spec for Spark-TTS BiCodec SpeakerEncoder input.
+def make_spark_mel_spec(audio: np.ndarray, sr: int = SPARK_SAMPLE_RATE) -> np.ndarray:
+    """Compute mel-spec for the Spark-TTS BiCodec SpeakerEncoder input.
 
-    Spark-TTS uses 80 mel bins, ~80 Hz frame rate, 1024-pt FFT, 16 kHz.
+    Spark-TTS uses 128 mel bins, 50 Hz frame rate (hop=320 @ 16 kHz),
+    1024-pt FFT, 16 kHz sample rate. This module-level convenience function
+    matches the upstream BiCodec.forward preprocessing.
     """
     import librosa
 
-    if sr != BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE:
-        audio = librosa.resample(
-            audio, orig_sr=sr, target_sr=BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE
-        )
-    mel = librosa.feature.melspectrogram(
-        y=audio.astype(np.float32),
-        sr=BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE,
-        n_fft=BiCodecSpeakerEncoder.SPARK_N_FFT,
-        hop_length=BiCodecSpeakerEncoder.SPARK_HOP,
-        n_mels=BiCodecSpeakerEncoder.SPARK_N_MELS,
-        fmin=0,
-        fmax=8000,
-        power=2.0,
-    )
-    mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
-    mel_db = (mel_db + 80.0) / 20.0
-    return mel_db[None, ...]  # [1, 80, T_frames]
+    if sr != SPARK_SAMPLE_RATE:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=SPARK_SAMPLE_RATE)
+    return BiCodecSpeakerEncoder.make_mel_spec(audio)

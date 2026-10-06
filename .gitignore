@@ -30,6 +30,10 @@ models/*
 # safetensors header = ~2.9 KB total. Small enough to commit so the v2
 # pipeline runs out of the box without re-running offline registration.
 !models/voices_v2.safetensors
+# v3 Spark BiCodec 1024-d d_vector (FP16) + 48-byte FSQ per voice:
+# 5 voices × (2 KB + 48 B) + safetensors header ≈ ~11 KB total. Committed
+# so v3 pipeline runs out of the box without re-running offline registration.
+!models/voices_v3.safetensors
 
 # ----------------------------------------------------------------------------
 # Data fixtures — large wav files (5 voices × 30 s × 24 kHz ≈ 14 MB), may be
