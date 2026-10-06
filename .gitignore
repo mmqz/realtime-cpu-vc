@@ -22,9 +22,14 @@ htmlcov/
 # ----------------------------------------------------------------------------
 # Model weights — downloaded by subagents / users from HuggingFace, never
 # committed. Each ONNX/torch artifact is 5–25 MB; total v3 footprint ~29 MB.
+# NOTE: use `models/*` (not `models/`) so per-file negations below work.
 # ----------------------------------------------------------------------------
-models/
+models/*
 !models/.gitkeep
+# v2 OpenVoice 256-d speaker embeddings (FP16): 5 voices × 512 B + ~344 B
+# safetensors header = ~2.9 KB total. Small enough to commit so the v2
+# pipeline runs out of the box without re-running offline registration.
+!models/voices_v2.safetensors
 
 # ----------------------------------------------------------------------------
 # Data fixtures — large wav files (5 voices × 30 s × 24 kHz ≈ 14 MB), may be
