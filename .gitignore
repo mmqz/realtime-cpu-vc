@@ -16,9 +16,10 @@ models/*.int8.onnx
 models/*.safetensors
 models/*.npz
 
-# Data
-data/voices/*.wav
+# Data — generated fixtures are committed (small, deterministic seeds)
+# Large real-audio downloads may go to data/test/ which stays ignored.
 data/test/*.wav
+data/cache/
 
 # Benchmarks / logs
 benchmark.txt
