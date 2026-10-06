@@ -100,6 +100,7 @@ import warnings
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 
 # -- Path bootstrap: add the cloned Spark-TTS repo so `import sparktts` works.
 SPARK_REPO = Path("/home/z/my-project/repos/spark-tts")
@@ -203,6 +204,83 @@ class SparkSpeakerEncoderWrapper(torch.nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Wrapper v2: SpeakerEncoder → (d_vector, indices) — SKIP x_vector
+# ---------------------------------------------------------------------------
+class SparkSpeakerEncoderSkipXVector(torch.nn.Module):
+    """Wrapper around Spark's ``SpeakerEncoder`` that SKIPS the x_vector path.
+
+    The original ``SparkSpeakerEncoderWrapper`` runs the full
+    ``ECAPA_TDNN.forward(mels, return_latent=True)`` which returns BOTH
+    ``(x_vector, features)``. The ``x_vector`` is the ECAPA-TDNN pooled
+    speaker embedding (ASTP pool + BN + Linear → 1024-d), used only for
+    auxiliary speaker-verification tasks. In the v3 hybrid pipeline we
+    consume ``d_vector`` (Perceiver + FSQ + project) for flow conditioning
+    and ``fsq_indices`` for O(1) voice retrieval — ``x_vector`` is unused.
+
+    By re-implementing the ECAPA-TDNN conv-only path (up to and including
+    ``F.relu(self.conv(out))`` = the ``latent``/``features`` tensor) we skip
+    the ASTP pool + BN + Linear sub-modules of ``ECAPA_TDNN`` that produce
+    ``x_vector``:
+
+        ECAPA_TDNN.forward (source: sparktts/modules/speaker/ecapa_tdnn.py)
+        ─────────────────────────────────────────────────────────────────
+          x = x.permute(0, 2, 1)                       # (B,T,F)→(B,F,T)
+          out1 = self.layer1(x)                       # Conv1dReluBn (128→512)
+          out2 = self.layer2(out1)                     # SE-Res2Block
+          out3 = self.layer3(out2)                     # SE-Res2Block
+          out4 = self.layer4(out3)                     # SE-Res2Block
+          out = torch.cat([out2, out3, out4], dim=1)  # [B, 1536, T]
+          latent = F.relu(self.conv(out))             # [B, 1536, T]  ← KEPT
+          # vvv x_vector path (~3-4M params, ~10% compute) — SKIPPED vvv
+          out = self.bn(self.pool(latent))            # ASTP att-pool [B, 3072]
+          out = self.linear(out)                      # Linear → [B, 1024]
+          if self.emb_bn: out = self.bn2(out)
+          # ^^^ x_vector path ^^^
+
+    Params saved (verified against the loaded 0.5B checkpoint):
+        - ECAPA_TDNN.pool.linear1   Conv1d(4608, 128, 1)  ≈ 590 K
+        - ECAPA_TDNN.pool.linear2   Conv1d(128, 1536, 1) ≈ 198 K
+        - ECAPA_TDNN.bn             BatchNorm1d(3072)     ≈   6 K
+        - ECAPA_TDNN.linear         Linear(3072, 1024)   ≈ 3.15 M
+        ─────────────────────────────────────────────────────────
+        total x_vector path                                  ≈ 3.94 M params
+        (≈ 28 % of the 14.06 M SpeakerEncoder total)
+
+    Output contract (matches v3 hybrid needs):
+        Input  : mels       [B, T, 128]
+        Outputs: d_vector   [B, 1024]      float32  (speaker conditioning)
+                 indices    [B, 1, 32]      int64    (FSQ codes, 48 B packed)
+    """
+
+    def __init__(self, enc: SpeakerEncoder) -> None:
+        super().__init__()
+        self.enc = enc
+
+    def forward(
+        self, mel_spec: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # ECAPA-TDNN conv path — replicate the source's conv-only portion
+        # (layer1..layer4 + conv) UP TO `latent`, skipping pool/bn/linear.
+        ecapa = self.enc.speaker_encoder
+        x = mel_spec.permute(0, 2, 1)               # (B,T,F) -> (B,F,T)
+        out1 = ecapa.layer1(x)
+        out2 = ecapa.layer2(out1)
+        out3 = ecapa.layer3(out2)
+        out4 = ecapa.layer4(out3)
+        out = torch.cat([out2, out3, out4], dim=1)  # [B, 1536, T]
+        latent = F.relu(ecapa.conv(out))             # [B, 1536, T]  (features)
+        # ↑ END of ECAPA conv path — pool/bn/linear (x_vector) SKIPPED ↑
+
+        # PerceiverResampler + ResidualFSQ + project — identical to
+        # SparkSpeakerEncoderWrapper.forward (the d_vector path is unchanged).
+        x = self.enc.perceiver_sampler(latent.transpose(1, 2)).transpose(1, 2)
+        zq, indices = self.enc.quantizer(x)
+        x_flat = zq.reshape(zq.shape[0], -1)
+        d_vector = self.enc.project(x_flat)
+        return d_vector, indices.to(torch.int64)
+
+
+# ---------------------------------------------------------------------------
 # Export helpers
 # ---------------------------------------------------------------------------
 def _load_spark_bicodec() -> BiCodec:
@@ -258,6 +336,43 @@ def _export_speaker_encoder(
         )
 
 
+def _export_speaker_encoder_v2(
+    bicodec: BiCodec, out_path: Path
+) -> None:
+    """Export SpeakerEncoder v2 (d_vector + indices ONLY, x_vector SKIPPED).
+
+    OPT-4: skip the ECAPA-TDNN ASTP pool + BN + Linear path that produces
+    x_vector (unused in the v3 hybrid pipeline). Saves ~3.94 M params of
+    ONNX initializers (~28 % of the 14.06 M SpeakerEncoder total) and the
+    ~10 % of compute that goes into the x_vector path.
+    """
+    wrapper = SparkSpeakerEncoderSkipXVector(bicodec.speaker_encoder).eval()
+
+    # Dummy input: [B=1, T=300, 128]. T=300 = 6 s ref segment at 50 Hz.
+    dummy_mel = torch.randn(1, REF_SEGMENT_FRAMES, NUM_MELS, dtype=torch.float32)
+
+    with torch.no_grad():
+        torch.onnx.export(
+            wrapper,
+            dummy_mel,
+            str(out_path),
+            input_names=["mel_spec"],
+            # NOTE: x_vector intentionally omitted — the v3 hybrid pipeline
+            # only consumes d_vector (flow conditioning) + fsq_indices
+            # (48-byte voice hash key).
+            output_names=["d_vector", "fsq_indices"],
+            dynamic_axes={
+                "mel_spec": {0: "batch", 1: "time"},
+                "d_vector": {0: "batch"},
+                "fsq_indices": {0: "batch"},
+            },
+            opset_version=17,
+            do_constant_folding=True,
+            # Legacy (TorchScript) exporter — see module docstring for why.
+            dynamo=False,
+        )
+
+
 def _verify_onnx(path: Path) -> dict:
     """Load the ONNX file via onnxruntime and return input/output metadata."""
     import onnxruntime as ort
@@ -280,7 +395,7 @@ def main() -> int:
     out_dir.mkdir(exist_ok=True, parents=True)
 
     # 1. Load Spark-TTS BiCodec model.
-    print(f"[1/4] Loading Spark-TTS BiCodec from {BICODEC_DIR}")
+    print(f"[1/6] Loading Spark-TTS BiCodec from {BICODEC_DIR}")
     bicodec = _load_spark_bicodec()
     n_se = sum(p.numel() for p in bicodec.speaker_encoder.parameters())
     print(f"      BiCodec loaded. SpeakerEncoder params: {n_se / 1e6:.3f}M")
@@ -291,14 +406,14 @@ def main() -> int:
           f"fsq_num_quantizers={FSQ_NUM_QUANTIZERS}")
 
     # 2. Sanity-check torch forward (catch any API drift before tracing).
-    print("\n[2/4] Sanity-check torch wrapper")
+    print("\n[2/6] Sanity-check torch wrappers")
     wrapper = SparkSpeakerEncoderWrapper(bicodec.speaker_encoder).eval()
     mel = torch.randn(2, REF_SEGMENT_FRAMES, NUM_MELS, dtype=torch.float32)
     with torch.no_grad():
         d_vec, idx, x_vec = wrapper(mel)
-    print(f"      d_vector shape: {tuple(d_vec.shape)}")
-    print(f"      fsq_indices shape: {tuple(idx.shape)} dtype: {idx.dtype}")
-    print(f"      x_vector shape: {tuple(x_vec.shape)}")
+    print(f"      [v1] d_vector shape: {tuple(d_vec.shape)}")
+    print(f"      [v1] fsq_indices shape: {tuple(idx.shape)} dtype: {idx.dtype}")
+    print(f"      [v1] x_vector shape: {tuple(x_vec.shape)}")
     assert d_vec.shape == (2, OUT_DIM), f"d_vector shape mismatch: {d_vec.shape}"
     assert idx.shape == (2, FSQ_NUM_QUANTIZERS, TOKEN_NUM), \
         f"fsq_indices shape mismatch: {idx.shape}"
@@ -307,9 +422,35 @@ def main() -> int:
     assert idx.max().item() < 4096, f"fsq index out of range: max={idx.max()}"
     assert idx.min().item() >= 0, f"fsq index negative: min={idx.min()}"
 
-    # 3. Export SpeakerEncoder ONNX.
+    # Also sanity-check the v2 skip-x_vector wrapper. d_vector + fsq_indices
+    # MUST match the v1 wrapper exactly (same compute path; we just stop before
+    # the ASTP pool + Linear that produce x_vector).
+    wrapper_v2 = SparkSpeakerEncoderSkipXVector(bicodec.speaker_encoder).eval()
+    with torch.no_grad():
+        d_vec_v2, idx_v2 = wrapper_v2(mel)
+    print(f"      [v2] d_vector shape: {tuple(d_vec_v2.shape)}")
+    print(f"      [v2] fsq_indices shape: {tuple(idx_v2.shape)} dtype: {idx_v2.dtype}")
+    assert d_vec_v2.shape == (2, OUT_DIM), f"v2 d_vector shape mismatch: {d_vec_v2.shape}"
+    assert idx_v2.shape == (2, FSQ_NUM_QUANTIZERS, TOKEN_NUM), \
+        f"v2 fsq_indices shape mismatch: {idx_v2.shape}"
+    # v2 d_vector + fsq_indices must match v1 EXACTLY (same compute path).
+    assert torch.allclose(d_vec, d_vec_v2, atol=1e-6), (
+        "v1/v2 d_vector divergence — wrapper path drift"
+    )
+    assert torch.equal(idx, idx_v2), "v1/v2 fsq_indices divergence"
+    # Param count: x_vector path = pool + bn + linear of ECAPA_TDNN.
+    ecapa = bicodec.speaker_encoder.speaker_encoder
+    n_xvec = (
+        sum(p.numel() for p in ecapa.pool.parameters())
+        + sum(p.numel() for p in ecapa.bn.parameters())
+        + sum(p.numel() for p in ecapa.linear.parameters())
+    )
+    print(f"      [v2] x_vector path params skipped: {n_xvec / 1e6:.3f}M "
+          f"({n_xvec / n_se * 100:.1f}% of {n_se / 1e6:.3f}M SpeakerEncoder)")
+
+    # 3. Export SpeakerEncoder ONNX (original — 3 outputs, for backward compat).
     se_path = out_dir / "spark_speaker_encoder.onnx"
-    print(f"\n[3/4] Exporting SpeakerEncoder → {se_path}")
+    print(f"\n[3/6] Exporting SpeakerEncoder v1 → {se_path}")
     _export_speaker_encoder(bicodec, se_path)
     info = _verify_onnx(se_path)
     print(f"      size: {info['size_kb']:.0f} KB")
@@ -317,10 +458,38 @@ def main() -> int:
     print(f"      outputs: {info['outputs']}")
 
     # 4. End-to-end sanity: ONNX output matches torch wrapper output.
-    print("\n[4/4] Parity check (torch wrapper vs ONNX runtime)")
+    print("\n[4/6] Parity check v1 (torch wrapper vs ONNX runtime)")
     _parity_check(se_path, bicodec)
 
-    print("\nDone. ONNX graph written to", se_path)
+    # 5. Export SpeakerEncoder v2 ONNX (2 outputs, x_vector SKIPPED).
+    #    Original spark_speaker_encoder.onnx is NOT overwritten — v2 is a
+    #    separate file (spark_speaker_encoder_v2.onnx). Smaller + faster.
+    se_v2_path = out_dir / "spark_speaker_encoder_v2.onnx"
+    print(f"\n[5/6] Exporting SpeakerEncoder v2 (skip x_vector) → {se_v2_path}")
+    _export_speaker_encoder_v2(bicodec, se_v2_path)
+    info_v2 = _verify_onnx(se_v2_path)
+    print(f"      size: {info_v2['size_kb']:.0f} KB "
+          f"(v1: {info['size_kb']:.0f} KB, "
+          f"saved {(info['size_kb'] - info_v2['size_kb']):.0f} KB = "
+          f"{(1 - info_v2['size_kb'] / info['size_kb']) * 100:.1f}%)")
+    print(f"      inputs : {info_v2['inputs']}")
+    print(f"      outputs: {info_v2['outputs']}")
+    # HARD assertion: v2 must have EXACTLY 2 outputs (d_vector + fsq_indices).
+    assert len(info_v2["outputs"]) == 2, (
+        f"v2 expected 2 outputs (d_vector + fsq_indices), "
+        f"got {len(info_v2['outputs'])}: {info_v2['outputs']}"
+    )
+    assert [o[0] for o in info_v2["outputs"]] == ["d_vector", "fsq_indices"], (
+        f"v2 output names mismatch: {info_v2['outputs']}"
+    )
+
+    # 6. End-to-end sanity for v2.
+    print("\n[6/6] Parity check v2 (torch wrapper vs ONNX runtime)")
+    _parity_check_v2(se_v2_path, bicodec)
+
+    print("\nDone. ONNX graphs written:")
+    print(f"  - {se_path}     (v1, 3 outputs incl. x_vector — backward compat)")
+    print(f"  - {se_v2_path}  (v2, 2 outputs — skip x_vector, OPT-4)")
     return 0
 
 
@@ -374,6 +543,57 @@ def _parity_check(se_path: Path, bicodec: BiCodec) -> None:
     # any divergence would mean the ONNX graph rounds differently than torch.
     assert idx_match == idx_total, (
         f"fsq_indices parity: {idx_match}/{idx_total} matched "
+        f"(torch={idx_torch.flatten()[:8]}, onnx={idx_onnx.flatten()[:8]})"
+    )
+
+
+def _parity_check_v2(se_path: Path, bicodec: BiCodec) -> None:
+    """Parity check for v2 (d_vector + fsq_indices only; x_vector skipped).
+
+    The d_vector + fsq_indices compute path is IDENTICAL to v1 — we just
+    stop the ECAPA-TDNN forward after ``F.relu(self.conv(out))`` = the
+    ``latent``/``features`` tensor that feeds the Perceiver. Hence the v2
+    ONNX d_vector + fsq_indices must match the v1 ONNX (and the v2 torch
+    wrapper) to the same precision as v1's parity bar.
+    """
+    import numpy as np
+    import onnxruntime as ort
+
+    torch.manual_seed(42)
+    np.random.seed(42)
+
+    wrapper = SparkSpeakerEncoderSkipXVector(bicodec.speaker_encoder).eval()
+    mel_np = np.random.randn(2, REF_SEGMENT_FRAMES, NUM_MELS).astype(np.float32)
+    mel_t = torch.from_numpy(mel_np)
+    with torch.no_grad():
+        d_torch, idx_torch = wrapper(mel_t)
+        d_torch = d_torch.numpy()
+        idx_torch = idx_torch.numpy()
+
+    sess = ort.InferenceSession(str(se_path), providers=["CPUExecutionProvider"])
+    # HARD assertion: v2 must have EXACTLY 2 outputs (no x_vector).
+    out_names = [o.name for o in sess.get_outputs()]
+    assert out_names == ["d_vector", "fsq_indices"], (
+        f"v2 ONNX outputs mismatch: {out_names} "
+        f"(expected ['d_vector', 'fsq_indices'])"
+    )
+    out = sess.run(None, {"mel_spec": mel_np})
+    d_onnx, idx_onnx = out
+
+    d_diff = float(np.abs(d_torch - d_onnx).max())
+    idx_match = int((idx_torch == idx_onnx).sum())
+    idx_total = int(np.prod(idx_torch.shape))
+
+    print(f"      d_vector   : torch {d_torch.shape} vs onnx {d_onnx.shape}"
+          f"  max|Δ| = {d_diff:.2e}")
+    print(f"      fsq_indices : torch {idx_torch.shape} vs onnx {idx_onnx.shape}"
+          f"  match {idx_match}/{idx_total}")
+    print(f"      (x_vector  : SKIPPED — not in v2 ONNX graph)")
+
+    # Same bar as v1's d_vector + fsq_indices.
+    assert d_diff < 1e-3, f"v2 d_vector parity exceeded 1e-3: {d_diff}"
+    assert idx_match == idx_total, (
+        f"v2 fsq_indices parity: {idx_match}/{idx_total} matched "
         f"(torch={idx_torch.flatten()[:8]}, onnx={idx_onnx.flatten()[:8]})"
     )
 
