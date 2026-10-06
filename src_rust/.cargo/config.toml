@@ -1,2 +1,20 @@
 [build]
+# `target-cpu=native` lets the host CPU's full ISA (AVX2/AVX-512 on x86,
+# NEON on ARM) be used by the compiler. Scoping it to host builds only —
+# when cross-compiling to aarch64-unknown-linux-gnu from an x86 host the
+# flag is silently ignored by LLVM but emits ~80 "not a recognized feature"
+# warnings. The `[target.<triple>]` sections below keep each target's
+# flags self-contained.
+rustflags = []
+
+# Host (x86_64) builds: tune for the running CPU.
+[target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=native"]
+
+# ARM64 cross-compile target (Pi 5 / RK3588 / Apple Silicon Linux VM).
+# The C cross-linker is `aarch64-linux-gnu-gcc` (Debian/Ubuntu package
+# `gcc-aarch64-linux-gnu`). If absent, `cargo build` fails inside the
+# miniaudio `cc`-crate build script — `cargo check` still succeeds and
+# verifies the Rust code is ARM-compatible without needing the C linker.
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
