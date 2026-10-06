@@ -1,0 +1,66 @@
+# v3 Hybrid Architecture config — Spark-TTS BiCodec SpeakerEncoder replaces OpenVoice v2 ReferenceEncoder
+# All other modules kept from v2 hybrid (TinyVC encoder + OpenVoice flow + F5-TTS Vocos).
+
+audio:
+  sample_rate: 24000
+  channels: 1
+  format: paInt16
+  block_size: 1920          # 80 ms chunk at 24 kHz
+  extra_size: 1920          # 80 ms look-ahead
+  crossfade_size: 960       # 40 ms SOLA crossfade
+  sola_search_size: 960     # 40 ms SOLA search
+  last_delay_size: 1920     # 80 ms last delay
+  input_device: -1
+  output_device: -1
+
+vad:
+  enabled: true
+  aggressiveness: 2
+  silence_gate: true
+
+ort:
+  # v1 spine (kept): TinyVC content encoder + pitch
+  encoder_model: models/encoder.int8.onnx
+
+  # v3 UPGRADE: Spark-TTS BiCodec SpeakerEncoder (ECAPA-TDNN c512 + Perceiver + ResidualFSQ)
+  # replaces v2's openvoice_ref_encoder.int8.onnx
+  #   v2: 256-d, 0.76M, 1MB INT8, Apache 2.0
+  #   v3: 512-d + 48-byte FSQ, 6-12M, 5MB INT8, Apache 2.0
+  # Expected uplift: +1-2% speaker similarity, +4MB RAM
+  speaker_encoder_model: models/spark_speaker_encoder.int8.onnx
+
+  # v2 spine kept: OpenVoice v2 ResidualCouplingBlock flow (8.7M, INT8 ~9 MB)
+  # Note: flow input dim stays 768 (TinyVC content output), but now conditioned
+  # by 512-d speaker embedding (vs 256-d in v2). May need a 512→256 projection layer.
+  speaker_flow_model: models/openvoice_residual_flow.int8.onnx
+
+  # v2 spine kept: F5-TTS Vocos vocoder (13M, INT8 ~7 MB)
+  vocoder_model: models/vocos.int8.onnx
+
+  providers: [CPUExecutionProvider]
+  intra_op_num_threads: 2
+  inter_op_num_threads: 1
+
+# v3 Voice registry — FSQ discrete codes (48 bytes per voice)
+voices:
+  # v1: kNN index 12 MB total
+  # v2: 256-d float embedding 2.5 KB total
+  # v3: 48-byte FSQ codes 240 bytes total (5 × 48) — O(1) hash-retrievable
+  registry_pattern: models/se_*.fsq
+  # Also load .pth files with decoded 512-d embeddings for runtime conditioning
+  embedding_pattern: models/se_*.pth
+  default_voice_id: 0
+
+pitch:
+  use_rmvpe_fallback: false
+  rmvpe_model: models/rmvpe.onnx
+
+v3_hybrid:
+  enabled: true
+  version: '3.0'
+  based_on: v2_hybrid  # only the speaker encoder is swapped
+  replaces_v2_speaker_encoder: true  # OpenVoice RefEncoder -> Spark BiCodec
+  expected_speaker_similarity: '0.90-0.94'  # vs v2 0.88-0.93
+  expected_rss_mb: '~89'                    # vs v2 ~85
+  expected_e2e_latency_ms: '380-430'        # vs v2 370-420
+  fsq_code_size_bytes: 48                   # per-voice, hash-retrievable
