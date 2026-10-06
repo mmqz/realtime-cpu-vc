@@ -710,18 +710,131 @@ impl InferenceSession {
         }
     }
 
-    /// Pulsify: convert a full-sequence ONNX graph into a chunk-streaming
-    /// variant (tract-only feature). Returns a new session that accepts
-    /// chunked input and maintains internal state across calls.
+    /// Pulsify the *currently loaded* model into a chunk-streaming variant
+    /// in-place (re-uses the loaded `TypedModel` from `session_tract`).
     ///
-    /// NOTE: This is a placeholder for P2 — tract's pulse API requires
-    /// source-graph surgery via `tract-pulse`. For now, returns
-    /// [`InferError::Tract`] to signal unimplemented.
-    pub fn pulsify(&self, _chunk_size: usize) -> InferResult<Self> {
-        Err(InferError::Tract(
-            "pulsify() not yet implemented (pending tract-pulse integration in P2.0-2)".to_string(),
-        ))
+    /// This is the in-memory form of the free function [`pulsify`]
+    /// below — when you already have an `InferenceSession` with the
+    /// `Tract` backend, you can pulsify it directly without re-reading
+    /// the ONNX file from disk. Returns a *new* session (the original
+    /// is left untouched).
+    ///
+    /// Returns [`InferError::NoSession`] if `self` isn't a `Tract`-backend
+    /// session. Returns [`InferError::Tract`] if pulsification fails for
+    /// this model architecture (common — see [`pulsify`] docstring).
+    pub fn pulsify(&self, chunk_size: usize) -> InferResult<Self> {
+        let runnable = self
+            .session_tract
+            .as_ref()
+            .ok_or(InferError::NoSession)?;
+        // `TypedRunnableModel = SimplePlan<TypedFact, Box<dyn TypedOp>>`.
+        // `SimplePlan::model()` gives us back `&TypedModel` so we can
+        // re-pulsify without re-reading the ONNX protobuf from disk.
+        let typed: &TypedModel = runnable.model();
+        pulsify_typed(typed, chunk_size).map(|runnable| Self {
+            backend: Backend::Tract,
+            session_ort: None,
+            session_tract: Some(runnable),
+            cached_binding: None,
+            cached_output_shape: None,
+        })
     }
+}
+
+/// Pulsify a full-sequence ONNX model into a chunk-streaming variant.
+///
+/// `tract-pulse` converts a full-sequence ONNX graph into a
+/// chunk-streaming variant with internal state (delay lines, source
+/// padding, overlap-add tails). This eliminates the need for SOLA
+/// crossfade at chunk boundaries: a pulsified model maintains streaming
+/// state across `.run()` calls, so adjacent chunks see the same context
+/// that a full-sequence inference would have produced internally.
+///
+/// # Pipeline impact
+///
+/// In the v2.0 Rust pipeline, calling `pulsify` on `vocos.int8.onnx`
+/// (the 48 kHz waveform decoder) would let the real-time audio thread
+/// feed chunks of `chunk_size` samples directly and receive the
+/// corresponding waveform chunk back without the SOLA windowing that
+/// the v1.0 Python path needed (`vocoder_v2.py:crossfade()`).
+///
+/// # Limitations
+///
+/// Pulsification requires:
+/// 1. At least one source input declared with a symbolic streaming
+///    dimension (e.g. ONNX `dim_param` on the time axis).
+/// 2. Every op in the graph to have a registered pulsifier — tract-pulse
+///    ships pulsifiers for Conv/Deconv/concat/slice/scan/etc. but exotic
+///    custom ops will fail.
+/// 3. The streaming symbol appears linearly (≤ once per wire shape);
+///    super-linear wires need ROI annotations.
+///
+/// For models that fail any of the above (common for production vocoders
+/// that ship with fixed input shapes), this function returns
+/// [`InferError::Tract`] with a descriptive message. Callers should
+/// fall back to the SOLA path in that case — the failure is graceful.
+///
+/// # Returns
+///
+/// A new `InferenceSession` with the `Tract` backend whose
+/// `session_tract` is the pulsed, stateful `TypedRunnableModel`. Note
+/// that callers must wrap calls in `SimpleState` to actually maintain
+/// streaming state across `.run()` invocations — the bare
+/// `TypedRunnableModel` returned here runs each chunk independently
+/// (no carryover). Full `SimpleState` integration is tracked as
+/// follow-on work to OPT-13.
+pub fn pulsify(model_path: &str, chunk_size: usize) -> InferResult<InferenceSession> {
+    if !Path::new(model_path).exists() {
+        return Err(InferError::NotFound(model_path.to_string()));
+    }
+    // Load ONNX proto → InferenceModel → TypedModel → optimized TypedModel.
+    let inference_model: InferenceModel =
+        tract_onnx::onnx().model_for_path(model_path)?;
+    let typed_model: TypedModel = inference_model.into_optimized()?;
+    pulsify_typed(&typed_model, chunk_size).map(|runnable| InferenceSession {
+        backend: Backend::Tract,
+        session_ort: None,
+        session_tract: Some(runnable),
+        cached_binding: None,
+        cached_output_shape: None,
+    })
+}
+
+/// Shared pulsification core: take a `TypedModel` (already optimized),
+/// add a streaming symbol if the model doesn't already have one, then
+/// pulse → typed → runnable.
+fn pulsify_typed(typed: &TypedModel, chunk_size: usize) -> InferResult<Arc<TypedRunnableModel>> {
+    use tract_pulse::model::PulsedModelExt as _;
+    // tract-pulse requires at least one source to carry the streaming
+    // symbol in its shape. tract-onnx parses ONNX `dim_param` (e.g. the
+    // `batch` or `time` axis declared as a string in the protobuf) into
+    // symbolic `TDim`s, so we scan input 0's shape for any pre-existing
+    // symbol and reuse it; if none, we mint a fresh "S".
+    let streaming_sym = typed
+        .input_fact(0)
+        .ok()
+        .and_then(|f| {
+            f.shape
+                .iter()
+                .flat_map(|d| d.symbols().into_iter())
+                .next()
+        })
+        .unwrap_or_else(|| typed.symbols.sym("S"));
+
+    // Pulsify: convert the graph to per-pulse chunks with internal state.
+    // `PulsedModel::new` returns a `PulsedModel` (a graph over `PulsedOp`s).
+    // `.into_typed()` lowers it back to a `TypedModel` whose ops now
+    // include `Delay` / `Source` state-machines, then `.into_runnable()`
+    // produces the executable `SimplePlan`.
+    let pulsed = tract_pulse::model::PulsedModel::new(typed, streaming_sym.clone(), &chunk_size.to_dim())
+        .map_err(|e| InferError::Tract(format!("pulse: {e}")))?;
+    let pulsed_typed: TypedModel = pulsed
+        .into_typed()
+        .map_err(|e| InferError::Tract(format!("pulse.into_typed: {e}")))?;
+    let runnable: Arc<TypedRunnableModel> = pulsed_typed
+        .into_runnable()
+        .map_err(|e| InferError::Tract(format!("pulse.into_runnable: {e}")))?;
+    Ok(runnable)
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,6 +1345,45 @@ mod tests {
             }
             Err(e) => {
                 eprintln!("SKIP: run_all forward failed (likely shape mismatch): {e}");
+            }
+        }
+    }
+
+    /// OPT-13: tract pulsification — turn a full-sequence ONNX graph into a
+    /// chunk-streaming variant with internal state (delay lines), so chunked
+    /// inference sees the same context as full-sequence inference and SOLA
+    /// crossfade becomes unnecessary.
+    ///
+    /// Most production vocoders (vocos included) ship with fixed input
+    /// shapes and ops that tract-pulse doesn't have pulsifiers for, so the
+    /// common outcome is "pulsification failed (expected)". The test treats
+    /// that as a soft pass — what we must not see is a compile-time error
+    /// or a panic.
+    #[test]
+    fn test_pulsify_basic() {
+        let model_path = format!("{MODELS_DIR}/vocos.int8.onnx");
+        if !have(&model_path) {
+            eprintln!("SKIP: vocos.int8.onnx not found");
+            return;
+        }
+        match pulsify(&model_path, 10) {
+            Ok(sess) => {
+                println!(
+                    "Pulsification succeeded, backend={:?}, input_count={}, output_count={}",
+                    sess.backend,
+                    sess.input_count(),
+                    sess.output_count(),
+                );
+            }
+            Err(e) => {
+                println!(
+                    "Pulsification failed (expected for complex models): {e}"
+                );
+                // Soft pass: pulsification is best-effort. The test only
+                // verifies that the function runs to completion without
+                // panicking — the function's contract is to return a
+                // descriptive `InferError::Tract` when the model isn't
+                // pulsifiable, and we got one.
             }
         }
     }

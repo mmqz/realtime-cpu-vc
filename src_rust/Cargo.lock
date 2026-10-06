@@ -1362,6 +1362,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tract-pulse"
+version = "0.23.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55022cad5e575b1bb2f1b7eaaa42837828de2c975167eb450eb11b68307dbe5b"
+dependencies = [
+ "downcast-rs",
+ "erased-serde",
+ "lazy_static",
+ "log",
+ "serde",
+ "tract-pulse-opl",
+ "tract-transformers",
+]
+
+[[package]]
+name = "tract-pulse-opl"
+version = "0.23.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17fb7c893409929cffc5fa72d09ff9d035c33b7ac98481c5e7fded58322e4f30"
+dependencies = [
+ "downcast-rs",
+ "lazy_static",
+ "tract-nnef",
+]
+
+[[package]]
 name = "tract-transformers"
 version = "0.23.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1462,6 +1488,7 @@ dependencies = [
  "ort",
  "thiserror",
  "tract-onnx",
+ "tract-pulse",
 ]
 
 [[package]]

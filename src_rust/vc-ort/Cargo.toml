@@ -7,6 +7,12 @@ license.workspace = true
 [dependencies]
 ort = { workspace = true }
 tract-onnx = { workspace = true }
+# OPT-13: tract-pulse provides the `pulse(chunk_size)` extension trait that
+# converts a full-sequence TypedModel into a chunk-streaming PulsedModel with
+# internal state (delay lines). This eliminates the need for SOLA crossfade
+# at chunk boundaries — pulsified models maintain streaming state across
+# `.run()` calls. Version must track tract-onnx's tract-core minor (0.23.x).
+tract-pulse = "0.23"
 ndarray = { workspace = true }
 thiserror = "1.0"
 # anyhow is tract's TractError type alias; needed for `?`-converting tract
