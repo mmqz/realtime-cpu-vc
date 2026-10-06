@@ -22,6 +22,7 @@
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use numpy::{PyArray1, PyReadonlyArray1};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use vc_native::{
@@ -354,6 +355,42 @@ fn synth_harmonics_py(f0: Vec<f32>, amps: Vec<f32>, n_harmonics: usize, sr: u32)
     synth_harmonics(&f0, &amps, n_harmonics, sr)
 }
 
+/// NumPy-array variant of `synth_harmonics_py` — zero-copy input + output.
+///
+/// Accepts `np.ndarray[float32]` (1-D) for both `f0` and `amps` (no per-element
+/// list-Vec conversion overhead — passes a slice view straight into the Rust
+/// SIMD hot path). Returns a freshly-allocated `np.ndarray[float32]` whose
+/// backing buffer is moved from the Rust `Vec<f32>` (no element-by-element
+/// copy).
+///
+/// # Python signature
+/// ```python
+/// synth_harmonics_np(f0: np.ndarray, amps: np.ndarray, n_harmonics: int, sr: int) -> np.ndarray
+/// ```
+///
+/// # Errors
+/// Raises `RuntimeError` if either input array is not C-contiguous. Convert
+/// non-contiguous arrays with `np.ascontiguousarray(...)` before calling.
+#[pyfunction]
+#[pyo3(signature = (f0, amps, n_harmonics, sr))]
+fn synth_harmonics_np<'py>(
+    py: Python<'py>,
+    f0: PyReadonlyArray1<'_, f32>,
+    amps: PyReadonlyArray1<'_, f32>,
+    n_harmonics: usize,
+    sr: u32,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let f0_slice = f0
+        .as_slice()
+        .map_err(|_| PyRuntimeError::new_err("f0 must be a contiguous numpy array — use np.ascontiguousarray()"))?;
+    let amps_slice = amps
+        .as_slice()
+        .map_err(|_| PyRuntimeError::new_err("amps must be a contiguous numpy array — use np.ascontiguousarray()"))?;
+    let output = synth_harmonics(f0_slice, amps_slice, n_harmonics, sr);
+    // `from_vec_bound` moves the Vec's allocation into a NumPy array (zero-copy).
+    Ok(PyArray1::from_vec_bound(py, output))
+}
+
 // ===========================================================================
 // Module registration
 // ===========================================================================
@@ -367,6 +404,7 @@ fn vc_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sola_find_best_offset_py, m)?)?;
     m.add_function(wrap_pyfunction!(sola_crossfade_py, m)?)?;
     m.add_function(wrap_pyfunction!(synth_harmonics_py, m)?)?;
+    m.add_function(wrap_pyfunction!(synth_harmonics_np, m)?)?;
     m.add("__doc__", "vc-python: v2.0 Rust pipeline PyO3 bindings (vc-ort + vc-native)")?;
     Ok(())
 }
