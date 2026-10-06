@@ -12,7 +12,7 @@ crate-type = ["cdylib"]   # maturin abi3 wheel
 pyo3 = { workspace = true }
 vc-ort = { path = "../vc-ort" }
 vc-native = { path = "../vc-native" }
-numpy = "0.22"           # PyO3 numpy bridge
+numpy = "0.22"           # PyO3 numpy bridge (re-exports its own ndarray 0.16 for IntoPyArray)
 rtrb = { workspace = true }
 
 # vc-python: PyO3 extension module exposing Rust v2.0 to Python
