@@ -1,0 +1,83 @@
+# v4 Two-Phase Architecture config
+# v1.0: Python + sherpa-onnx + tract + gguf-py (correctness, modular)
+# v2.0: Rust + miniaudio + sherpa-onnx Rust + tract + ggml (performance)
+
+audio:
+  sample_rate: 24000
+  channels: 1
+  format: paInt16
+  block_size: 1920          # 80 ms chunk at 24 kHz
+  extra_size: 1920          # 80 ms look-ahead
+  crossfade_size: 960       # 40 ms SOLA crossfade
+  sola_search_size: 960     # 40 ms SOLA search
+  last_delay_size: 1920     # 80 ms last delay
+  input_device: -1
+  output_device: -1
+
+# v1.0 uses sherpa-onnx silero-vad (replaces webrtcvad from v1)
+vad:
+  enabled: true
+  backend: sherpa-onnx      # or 'webrtcvad' as fallback
+  model: silero-vad         # ~22MB ONNX, downloaded on first use
+  threshold: 0.5
+  silence_gate: true       # skip encoder forward on silence
+
+# Optional denoiser (sherpa-onnx GTNCRN, ~5MB ONNX)
+denoiser:
+  enabled: false            # P1 default false; enable if mic environment noisy
+  model: gtn_crn            # streaming denoiser
+  strength: 0.5
+
+# Inference backend — v1.0 defaults to ORT, but tract can be used as alternative
+inference:
+  # v1.0 default: onnxruntime (MLAS for x86 AVX2, XNNPACK for ARM NEON)
+  # alternative: tract (pure-Rust, no C++ dep, ~5-15MB static binary, pulsification)
+  backend: onnxruntime      # or 'tract' for pure-Rust path
+  intra_op_num_threads: 2
+  inter_op_num_threads: 1
+
+# v3 hybrid ONNX models (kept from v3)
+ort:
+  encoder_model: models/encoder.int8.onnx              # TinyVC ConvNeXt 4.7M, INT8 5MB
+  speaker_encoder_model: models/spark_speaker_encoder.int8.onnx  # Spark BiCodec 6-12M, INT8 5MB
+  speaker_flow_model: models/openvoice_residual_flow.int8.onnx   # OpenVoice flow 8.7M, INT8 9MB
+  vocoder_model: models/vocos.int8.onnx                 # F5-TTS Vocos 13M, INT8 7MB
+  # Fallback speaker encoder if Spark BiCodec ONNX export fails
+  speaker_encoder_fallback: models/campplus.onnx         # sherpa-onnx CAMPPlus 192-d, 22MB
+  providers: [CPUExecutionProvider]
+
+# v4 Voice registry — same as v3 (5 voices × 48-byte FSQ codes)
+voices:
+  registry_pattern: models/se_*.fsq
+  embedding_pattern: models/se_*.pth
+  default_voice_id: 0
+
+pitch:
+  use_rmvpe_fallback: false
+  rmvpe_model: models/rmvpe.onnx
+
+# v4 weight serialization — GGUF format for clean v2.0 handoff
+weights:
+  format: onnx              # v1.0 default
+  # P1 task: convert to gguf via gguf-py for v2.0 tract+ggml handoff
+  # gguf_dir: models/gguf/  # 4 files: encoder.gguf, spark_speaker_encoder.gguf, flow.gguf, vocos.gguf
+  quantization: int8        # or 'q8_0' (ggml format), 'q4_0' (more aggressive)
+
+v4_two_phase:
+  enabled: true
+  version: '4.0'
+  # v1.0 (Python + sherpa-onnx + tract + gguf-py)
+  v1_0:
+    expected_e2e_latency_ms: '370-430'   # x86
+    expected_rss_mb: '~85-95'
+    expected_similarity: '0.90-0.94'
+    runtime: 'Python 3.10+PyAudio+onnxruntime+sherpa-onnx'
+  # v2.0 (Rust + miniaudio + sherpa-onnx Rust + tract + ggml)
+  v2_0:
+    expected_e2e_latency_ms: '200-280'  # x86
+    expected_rss_mb: '~50-70'
+    expected_similarity: '0.90-0.94'    # unchanged — only runtime swaps
+    runtime: 'Rust static binary (~5-15MB) + miniaudio + sherpa-onnx Rust + tract'
+    # Build via: cd src_rust && cargo build --release
+    # Python wheel via: cd src_rust/vc-python && maturin build --release
+    # ARM cross-compile: cargo build --release --target aarch64-unknown-linux-gnu

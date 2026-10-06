@@ -1,0 +1,45 @@
+# Rust workspace for v2.0 — vc-ort (Rust→ORT bridge) + vc-native (pure Rust hot paths) + vc-python (PyO3 wheel)
+#
+# Build: cargo build --release
+# Cross-compile to ARM: cargo build --release --target aarch64-unknown-linux-gnu
+# Build Python wheel: cd vc-python && maturin build --release
+
+[workspace]
+resolver = "2"
+members = ["vc-ort", "vc-native", "vc-python"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Z.ai"]
+license = "MIT"
+repository = "https://github.com/mmqz/realtime-cpu-vc"
+description = "Real-time CPU Voice Conversion — v2.0 Rust+C implementation"
+
+[workspace.dependencies]
+# ONNXRuntime Rust bindings — auto-downloads prebuilt libonnxruntime for x86_64+arm64-linux/macOS/Windows
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["download-binaries"] }
+# Pure-Rust ONNX inference — production-grade, INT8 + pulsification
+tract-onnx = "0.23.0"
+# sherpa-onnx Rust crate — VAD (silero), speaker encoder (CAMPPlus), denoiser (GTNCRN)
+sherpa-onnx = { version = "1.13.8", features = ["static"] }
+# ndarray for tensor ops
+ndarray = "0.16"
+# PyO3 for Python bindings (in vc-python only)
+pyo3 = { version = "0.22", features = ["extension-module"] }
+# Audio I/O — miniaudio vendor'd directly via cc::Build (skip stale miniaudio-rs crate)
+cc = "1.0"
+# Lock-free SPSC ring buffer for audio streaming
+rtrb = "0.4"
+# Async runtime for Python interop
+tokio = { version = "1.40", features = ["sync", "rt-multi-thread"] }
+# SIMD intrinsics abstraction
+wide = "0.7"
+
+# Profile settings — favor small binaries for v2.0 release
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

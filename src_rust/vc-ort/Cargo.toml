@@ -1,0 +1,15 @@
+[package]
+name = "vc-ort"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ort = { workspace = true }
+tract-onnx = { workspace = true }
+ndarray = { workspace = true }
+thiserror = "1.0"
+
+# vc-ort: ONNX inference orchestration in Rust
+# Uses `ort` crate (Rust→ONNXRuntime bindings) as primary, `tract-onnx` as fallback
+# for ops ORT doesn't support (rare) or for pulsification streaming conversion.

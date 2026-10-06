@@ -1,0 +1,24 @@
+[package]
+name = "vc-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "vc_python"
+crate-type = ["cdylib"]   # maturin abi3 wheel
+
+[dependencies]
+pyo3 = { workspace = true }
+vc-ort = { path = "../vc-ort" }
+vc-native = { path = "../vc-native" }
+numpy = "0.22"           # PyO3 numpy bridge
+rtrb = { workspace = true }
+
+# vc-python: PyO3 extension module exposing Rust v2.0 to Python
+# Build wheel: maturin build --release
+# Install: pip install ./target/wheels/vc_python-*.whl
+# Use in Python:
+#   from vc_python import RealtimeInfer, AudioConfig
+#   infer = RealtimeInfer(models_dir="models/", voice_id=0)
+#   infer.start()  # starts miniaudio + Rust pipeline

@@ -1,0 +1,20 @@
+[package]
+name = "vc-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rtrb = { workspace = true }
+wide = { workspace = true }
+
+[build-dependencies]
+cc = { workspace = true }
+
+# vc-native: Pure-Rust hot-path implementations + miniaudio audio I/O
+#
+# Why pure Rust (not via ONNXRuntime):
+# - SOLA cross-correlation search is a tight numerical loop that ORT doesn't optimize
+# - DDSP harmonic synthesis (sin(2π·cumsum(f0·n/sr))) is per-sample, ORT overhead too high
+# - SPSC ring buffer for audio streaming — no GIL, no contention
+# - Audio I/O callback must run GIL-free (PyAudio's GIL-on-each-chunk is the bottleneck)
