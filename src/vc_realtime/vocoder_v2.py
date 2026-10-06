@@ -20,7 +20,9 @@ Usage:
   # At inference: feed content features [B, 100, T_mel_frames] -> waveform
   waveform = vocoder.decode(mel_pred)
 """
+
 import os
+
 import numpy as np
 import onnxruntime as ort
 
@@ -40,11 +42,10 @@ class VocosV2:
     """
 
     VOCOS_SAMPLE_RATE = 24000
-    VOCOS_FRAME_RATE = 100   # Hz — Vocos is trained at 100 Hz
-    VOCOS_N_MELS = 100       # mel bins
+    VOCOS_FRAME_RATE = 100  # Hz — Vocos is trained at 100 Hz
+    VOCOS_N_MELS = 100  # mel bins
 
-    def __init__(self, model_path: str, intra_op_threads: int = 2,
-                 use_int8: bool = True):
+    def __init__(self, model_path: str, intra_op_threads: int = 2, use_int8: bool = True):
         """Load Vocos ONNX.
 
         Args:
@@ -54,7 +55,7 @@ class VocosV2:
         """
         # Auto-prefer INT8 variant if available
         if use_int8:
-            int8_path = model_path.replace('.onnx', '.int8.onnx')
+            int8_path = model_path.replace(".onnx", ".int8.onnx")
             if os.path.exists(int8_path):
                 model_path = int8_path
                 print(f"  VocosV2: using INT8 variant {int8_path}")
@@ -70,8 +71,7 @@ class VocosV2:
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            model_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
 
     def decode(self, mel_pred: np.ndarray) -> np.ndarray:

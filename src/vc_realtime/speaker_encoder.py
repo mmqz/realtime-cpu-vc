@@ -22,11 +22,12 @@ Usage:
   # Per inference: lookup by voice_id
   se_target = enc.get_speaker_embedding(voice_id=0)
 """
+
 import os
+from glob import glob
+
 import numpy as np
 import onnxruntime as ort
-from typing import Optional
-from glob import glob
 
 
 class SpeakerEncoder:
@@ -40,23 +41,21 @@ class SpeakerEncoder:
     # OpenVoice v2 default ref encoder input shape:
     #   mel-spec [B, n_mels=80, T_ref_frames] at 200 Hz hop, 1024 n_fft
     OPENVOICE_SAMPLE_RATE = 22050  # OpenVoice v2 was trained at 22.05 kHz
-    OPENVOICE_HOP = 256            # 200 Hz frame rate
+    OPENVOICE_HOP = 256  # 200 Hz frame rate
     OPENVOICE_N_FFT = 1024
     OPENVOICE_N_MELS = 80
 
     def __init__(self, model_path: str, intra_op_threads: int = 2):
         if not os.path.exists(model_path):
             raise FileNotFoundError(
-                f"Speaker encoder ONNX not found at {model_path}. "
-                f"Export from OpenVoice v2 source."
+                f"Speaker encoder ONNX not found at {model_path}. Export from OpenVoice v2 source."
             )
         so = ort.SessionOptions()
         so.intra_op_num_threads = intra_op_threads
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            model_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
         self.voice_registry = {}  # voice_id -> 256-d np.float32 array
 
@@ -77,7 +76,7 @@ class SpeakerEncoder:
             se = se[0]  # [256]
         return se
 
-    def load_voice_registry(self, pattern: str = 'models/se_*.pth'):
+    def load_voice_registry(self, pattern: str = "models/se_*.pth"):
         """Load all se_*.pth files into self.voice_registry.
 
         File names should follow the convention se_<voice_id>.pth where voice_id
@@ -85,12 +84,13 @@ class SpeakerEncoder:
         or 256 × 4 bytes = 1024 bytes (FP32).
         """
         import torch
+
         self.voice_registry.clear()
         for path in sorted(glob(pattern)):
             # Extract voice_id from filename: se_0.pth -> 0
             stem = os.path.splitext(os.path.basename(path))[0]
             try:
-                voice_id = int(stem.split('_')[-1])
+                voice_id = int(stem.split("_")[-1])
             except ValueError:
                 continue
             se = torch.load(path).numpy().astype(np.float32)
@@ -108,8 +108,9 @@ class SpeakerEncoder:
             se: [256] float32
         """
         if voice_id not in self.voice_registry:
-            raise KeyError(f"voice_id {voice_id} not in registry "
-                            f"(loaded: {list(self.voice_registry.keys())})")
+            raise KeyError(
+                f"voice_id {voice_id} not in registry (loaded: {list(self.voice_registry.keys())})"
+            )
         return self.voice_registry[voice_id]
 
 
@@ -125,16 +126,18 @@ def make_openvoice_mel_spec(audio: np.ndarray, sr: int = 22050) -> np.ndarray:
         mel_spec: [1, 80, T_frames] float32
     """
     import librosa
+
     if sr != SpeakerEncoder.OPENVOICE_SAMPLE_RATE:
-        audio = librosa.resample(audio, orig_sr=sr,
-                                 target_sr=SpeakerEncoder.OPENVOICE_SAMPLE_RATE)
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=SpeakerEncoder.OPENVOICE_SAMPLE_RATE)
     mel = librosa.feature.melspectrogram(
         y=audio.astype(np.float32),
         sr=SpeakerEncoder.OPENVOICE_SAMPLE_RATE,
         n_fft=SpeakerEncoder.OPENVOICE_N_FFT,
         hop_length=SpeakerEncoder.OPENVOICE_HOP,
         n_mels=SpeakerEncoder.OPENVOICE_N_MELS,
-        fmin=0, fmax=8000, power=2.0,
+        fmin=0,
+        fmax=8000,
+        power=2.0,
     )
     mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
     # OpenVoice uses normalized log-mel

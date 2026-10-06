@@ -24,18 +24,24 @@ Inference flow:
                                 v
                         waveform [B, 1, T_samples] at 24 kHz
 """
-import os
+
 import math
+import os
+
 import numpy as np
 import onnxruntime as ort
-from typing import Tuple
 
 
 class Decoder:
     """ORT wrapper for TinyVC DDSP decoder."""
 
-    def __init__(self, source_net_path: str, filter_net_path: str,
-                 intra_op_threads: int = 2, inter_op_threads: int = 1):
+    def __init__(
+        self,
+        source_net_path: str,
+        filter_net_path: str,
+        intra_op_threads: int = 2,
+        inter_op_threads: int = 1,
+    ):
         for p in (source_net_path, filter_net_path):
             if not os.path.exists(p):
                 raise FileNotFoundError(
@@ -48,16 +54,13 @@ class Decoder:
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         self.source_net = ort.InferenceSession(
-            source_net_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            source_net_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
         self.filter_net = ort.InferenceSession(
-            filter_net_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            filter_net_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
 
-    def decode(self, content_feat: np.ndarray, f0: np.ndarray,
-               energy: np.ndarray) -> np.ndarray:
+    def decode(self, content_feat: np.ndarray, f0: np.ndarray, energy: np.ndarray) -> np.ndarray:
         """Full DDSP decode: content+f0+energy → waveform.
 
         Args:
@@ -77,12 +80,13 @@ class Decoder:
 
     # ---------- Sub-graph forwarders ----------
 
-    def _run_source_net(self, content: np.ndarray, f0: np.ndarray,
-                        energy: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _run_source_net(
+        self, content: np.ndarray, f0: np.ndarray, energy: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         inputs = {
-            'content': content.astype(np.float32),
-            'f0': f0.astype(np.float32),
-            'energy': energy.astype(np.float32),
+            "content": content.astype(np.float32),
+            "f0": f0.astype(np.float32),
+            "energy": energy.astype(np.float32),
         }
         # Match by input name
         feed = {}
@@ -92,13 +96,14 @@ class Decoder:
         amp, kernel = outputs[0], outputs[1]
         return amp, kernel
 
-    def _run_filter_net(self, content: np.ndarray, f0: np.ndarray,
-                        energy: np.ndarray, source_signal: np.ndarray) -> np.ndarray:
+    def _run_filter_net(
+        self, content: np.ndarray, f0: np.ndarray, energy: np.ndarray, source_signal: np.ndarray
+    ) -> np.ndarray:
         inputs = {
-            'content': content.astype(np.float32),
-            'f0': f0.astype(np.float32),
-            'energy': energy.astype(np.float32),
-            'source': source_signal.astype(np.float32),
+            "content": content.astype(np.float32),
+            "f0": f0.astype(np.float32),
+            "energy": energy.astype(np.float32),
+            "source": source_signal.astype(np.float32),
         }
         feed = {}
         for i in self.filter_net.get_inputs():
@@ -108,9 +113,9 @@ class Decoder:
 
     # ---------- DDSP synthesis (Python, between the two ONNX calls) ----------
 
-    def _synthesize_source(self, amp: np.ndarray, kernel: np.ndarray,
-                           f0: np.ndarray, sr: int = 24000,
-                           hop: int = 480) -> np.ndarray:
+    def _synthesize_source(
+        self, amp: np.ndarray, kernel: np.ndarray, f0: np.ndarray, sr: int = 24000, hop: int = 480
+    ) -> np.ndarray:
         """Harmonic + noise synthesis, faithful to tinyvc/module/tinyvc/decoder.py:24-85.
 
         Args:
@@ -130,8 +135,8 @@ class Decoder:
 
         # Harmonic source: sum_k=1^15 amp_k * sin(k * phase)
         harmonics = np.stack(
-            [np.sin((k+1) * phase) for k in range(K-1)],  # K-1 = 14 harmonics (skip DC at k=0)
-            axis=1
+            [np.sin((k + 1) * phase) for k in range(K - 1)],  # K-1 = 14 harmonics (skip DC at k=0)
+            axis=1,
         )  # [B, 14, T_samples]
         # Upsample amp from frame to sample domain
         amp_up = np.repeat(amp[:, 1:, :], hop, axis=-1)[:, :, :T_samples]  # [B, 14, T_samples]

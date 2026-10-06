@@ -12,8 +12,10 @@ v1.0 fallback (if sherpa-onnx wheel fails to install): webrtcvad 2.0.10 (BSD-3)
 v2.0 (Rust): sherpa-onnx Rust crate (sherpa-onnx = "1.13.8", features=["static"])
   - Same C++ core, safe FFI, prebuilt static lib bundled.
 """
+
 import os
 from typing import Protocol
+
 import numpy as np
 
 
@@ -29,14 +31,11 @@ class SherpaOnnxSileroVAD:
     Model: silero_vad.onnx (~22MB, downloaded by sherpa-onnx on first use)
     """
 
-    def __init__(self, model_path: str = None, threshold: float = 0.5,
-                 aggressiveness: int = 2):
+    def __init__(self, model_path: str = None, threshold: float = 0.5, aggressiveness: int = 2):
         try:
-            from sherpa_onnx import VadModelConfig, SileroVadModelConfig
+            from sherpa_onnx import SileroVadModelConfig, VadModelConfig
         except ImportError as e:
-            raise ImportError(
-                "sherpa-onnx not installed. Run: pip install sherpa-onnx"
-            ) from e
+            raise ImportError("sherpa-onnx not installed. Run: pip install sherpa-onnx") from e
 
         # Default model path — sherpa-onnx downloads to its own cache dir
         if model_path is None:
@@ -56,6 +55,7 @@ class SherpaOnnxSileroVAD:
 
         # sherpa-onnx SileroVad object
         from sherpa_onnx import VoiceActivityDetector
+
         self._vad = VoiceActivityDetector(config, buffer_size_in_seconds=60)
         self._sample_rate = 16000
 
@@ -86,6 +86,7 @@ class WebRtcVAD:
 
     def __init__(self, aggressiveness: int = 2):
         import webrtcvad
+
         self._vad = webrtcvad.Vad(aggressiveness)
         self._sample_rate = 16000  # WebRTC VAD requires 8/16/32kHz
 
@@ -99,7 +100,7 @@ class WebRtcVAD:
             pcm = arr.astype(np.int16).tobytes()
         frame = pcm[:frame_size]
         if len(frame) < frame_size:
-            frame += b'\x00' * (frame_size - len(frame))
+            frame += b"\x00" * (frame_size - len(frame))
         try:
             return self._vad.is_speech(frame, self._sample_rate)
         except Exception:

@@ -35,11 +35,12 @@ Usage:
   enc.load_voice_registry('models/se_*.fsq')
   se_target = enc.get_speaker_embedding(voice_id=0)  # returns 512-d float32 (decoded from FSQ)
 """
+
 import os
+from glob import glob
+
 import numpy as np
 import onnxruntime as ort
-from typing import Optional
-from glob import glob
 
 
 class BiCodecSpeakerEncoder:
@@ -53,17 +54,16 @@ class BiCodecSpeakerEncoder:
 
     SPARK_SAMPLE_RATE = 16000  # Spark-TTS uses 16 kHz input
     SPARK_N_FFT = 1024
-    SPARK_HOP = 200            # ~80 Hz frame rate (16 kHz / 200)
+    SPARK_HOP = 200  # ~80 Hz frame rate (16 kHz / 200)
     SPARK_N_MELS = 80
 
-    def __init__(self, model_path: str, intra_op_threads: int = 2,
-                 use_int8: bool = True):
+    def __init__(self, model_path: str, intra_op_threads: int = 2, use_int8: bool = True):
         """Load BiCodec SpeakerEncoder ONNX.
 
         Auto-prefer INT8 variant if available.
         """
         if use_int8:
-            int8_path = model_path.replace('.onnx', '.int8.onnx')
+            int8_path = model_path.replace(".onnx", ".int8.onnx")
             if os.path.exists(int8_path):
                 model_path = int8_path
                 print(f"  BiCodecSpeakerEncoder: using INT8 variant {int8_path}")
@@ -78,11 +78,10 @@ class BiCodecSpeakerEncoder:
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            model_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
         self.voice_registry = {}  # voice_id -> 512-d np.float32 (decoded from FSQ)
-        self.fsq_codes = {}        # voice_id -> 192-d int32 (raw FSQ codes)
+        self.fsq_codes = {}  # voice_id -> 192-d int32 (raw FSQ codes)
 
     def encode_reference(self, ref_mel_spec: np.ndarray) -> np.ndarray:
         """Run BiCodec SpeakerEncoder on a reference mel-spec.
@@ -110,7 +109,7 @@ class BiCodecSpeakerEncoder:
         self.fsq_codes[len(self.fsq_codes)] = fsq_codes[0].flatten()  # [192]
         return se
 
-    def load_voice_registry(self, pattern: str = 'models/se_*.fsq'):
+    def load_voice_registry(self, pattern: str = "models/se_*.fsq"):
         """Load all se_*.fsq files (48-byte each) into self.voice_registry.
 
         The .fsq files contain 48 bytes of FSQ codes per voice. To get the 512-d
@@ -120,13 +119,14 @@ class BiCodecSpeakerEncoder:
         """
         self.voice_registry.clear()
         # Load .pth (512-d float vector for runtime conditioning)
-        for path in sorted(glob(pattern.replace('.fsq', '.pth'))):
+        for path in sorted(glob(pattern.replace(".fsq", ".pth"))):
             stem = os.path.splitext(os.path.basename(path))[0]
             try:
-                voice_id = int(stem.split('_')[-1])
+                voice_id = int(stem.split("_")[-1])
             except ValueError:
                 continue
             import torch
+
             se = torch.load(path).numpy().astype(np.float32)
             if se.shape == (512,):
                 self.voice_registry[voice_id] = se
@@ -135,18 +135,19 @@ class BiCodecSpeakerEncoder:
         for path in sorted(glob(pattern)):
             stem = os.path.splitext(os.path.basename(path))[0]
             try:
-                voice_id = int(stem.split('_')[-1])
+                voice_id = int(stem.split("_")[-1])
             except ValueError:
                 continue
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 self.fsq_codes[voice_id] = np.frombuffer(f.read(), dtype=np.uint8)
         print(f"  Voice registry: {len(self.voice_registry)} voices loaded")
 
     def get_speaker_embedding(self, voice_id: int) -> np.ndarray:
         """O(1) lookup of the 512-d embedding for the given voice."""
         if voice_id not in self.voice_registry:
-            raise KeyError(f"voice_id {voice_id} not in registry "
-                            f"(loaded: {list(self.voice_registry.keys())})")
+            raise KeyError(
+                f"voice_id {voice_id} not in registry (loaded: {list(self.voice_registry.keys())})"
+            )
         return self.voice_registry[voice_id]
 
     def lookup_by_fsq_hash(self, ref_fsq_code: np.ndarray) -> int:
@@ -169,16 +170,20 @@ def make_spark_mel_spec(audio: np.ndarray, sr: int = 16000) -> np.ndarray:
     Spark-TTS uses 80 mel bins, ~80 Hz frame rate, 1024-pt FFT, 16 kHz.
     """
     import librosa
+
     if sr != BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE:
-        audio = librosa.resample(audio, orig_sr=sr,
-                                 target_sr=BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE)
+        audio = librosa.resample(
+            audio, orig_sr=sr, target_sr=BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE
+        )
     mel = librosa.feature.melspectrogram(
         y=audio.astype(np.float32),
         sr=BiCodecSpeakerEncoder.SPARK_SAMPLE_RATE,
         n_fft=BiCodecSpeakerEncoder.SPARK_N_FFT,
         hop_length=BiCodecSpeakerEncoder.SPARK_HOP,
         n_mels=BiCodecSpeakerEncoder.SPARK_N_MELS,
-        fmin=0, fmax=8000, power=2.0,
+        fmin=0,
+        fmax=8000,
+        power=2.0,
     )
     mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
     mel_db = (mel_db + 80.0) / 20.0

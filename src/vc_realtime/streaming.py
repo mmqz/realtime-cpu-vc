@@ -1,21 +1,31 @@
 """
-modules/streaming.py — Real-time streaming shell (PyAudio + ORT)
-===================================================================
+vc_realtime/streaming.py — Real-time streaming shell (PyAudio + ORT)
+====================================================================
 Source: tinyvc/infer_streaming.py + tinyvc/module/infer/stream.py:30-96
 
 P1 design: SOLA crossfade with torch.roll ring buffer + ORT session
 P2 plan:  replace ring buffer with PocketTTS StreamingConv1d + KV-cache
           (borrowed from pocket_tts/modules/conv.py:86-117)
-"""
-import numpy as np
-import pyaudio
-from typing import Optional
-from collections import deque
-import webrtcvad
 
-from .encoder import Encoder, make_mel_spec
+Optional dependencies (pyaudio, webrtcvad) are imported lazily so the
+package remains importable on systems without audio hardware / VAD.
+Use the `StreamingInfer` class only when an audio device is available;
+for headless benchmarks call `Encoder`/`KNNRetrieval`/`Decoder` directly.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from .decoder import Decoder
+from .encoder import Encoder, make_mel_spec
 from .knn_retrieval import KNNRetrieval
+
+if TYPE_CHECKING:  # avoid runtime import for type-only references
+    import pyaudio  # noqa: F401
+    import webrtcvad  # noqa: F401
 
 
 class StreamingInfer:
@@ -27,19 +37,18 @@ class StreamingInfer:
         -> PyAudio speaker callback
     """
 
-    def __init__(self, config: dict, encoder: Encoder, decoder: Decoder,
-                 knn: KNNRetrieval):
+    def __init__(self, config: dict, encoder: Encoder, decoder: Decoder, knn: KNNRetrieval):
         self.cfg = config
         self.enc = encoder
         self.dec = decoder
         self.knn = knn
 
-        sr = config['audio']['sample_rate']
-        block = config['audio']['block_size']
-        extra = config['audio']['extra_size']
-        crossfade = config['audio']['crossfade_size']
-        sola_search = config['audio']['sola_search_size']
-        last_delay = config['audio']['last_delay_size']
+        sr = config["audio"]["sample_rate"]
+        block = config["audio"]["block_size"]
+        extra = config["audio"]["extra_size"]
+        crossfade = config["audio"]["crossfade_size"]
+        sola_search = config["audio"]["sola_search_size"]
+        last_delay = config["audio"]["last_delay_size"]
         self.sr = sr
         self.block_size = block
         self.extra_size = extra
@@ -48,16 +57,16 @@ class StreamingInfer:
         self.last_delay_size = last_delay
 
         # Ring buffer: must hold block + extra + sola_search + 2*last_delay
-        buf_size = max(block + crossfade + sola_search + 2 * last_delay,
-                       block + extra)
+        buf_size = max(block + crossfade + sola_search + 2 * last_delay, block + extra)
         self.input_buf = np.zeros(buf_size, dtype=np.float32)
-        self.last_output_tail = np.zeros(crossfade + sola_search + last_delay,
-                                          dtype=np.float32)
+        self.last_output_tail = np.zeros(crossfade + sola_search + last_delay, dtype=np.float32)
 
-        # VAD
+        # VAD (lazy import — webrtcvad is an optional dependency)
         self.vad = None
-        if config['vad']['enabled']:
-            self.vad = webrtcvad.Vad(config['vad']['aggressiveness'])
+        if config["vad"]["enabled"]:
+            import webrtcvad
+
+            self.vad = webrtcvad.Vad(config["vad"]["aggressiveness"])
 
         # PyAudio streams (opened on start)
         self.pa = None
@@ -70,6 +79,8 @@ class StreamingInfer:
         Receives `block_size` samples of int16 audio from mic, runs VC, writes
         to the output stream (sync callback model for simplicity).
         """
+        import pyaudio  # lazy: this callback only fires while streams are active
+
         # Decode int16 -> float32 [-1, 1]
         chunk = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
 
@@ -79,10 +90,10 @@ class StreamingInfer:
             return (in_data, pyaudio.paContinue)
 
         # Roll ring buffer: shift in the new chunk
-        self.input_buf = np.concatenate([self.input_buf[len(chunk):], chunk])
+        self.input_buf = np.concatenate([self.input_buf[len(chunk) :], chunk])
 
         # Compute mel-spec from input_buf (use the last block+extra samples)
-        audio_for_mel = self.input_buf[-(self.block_size + self.extra_size):]
+        audio_for_mel = self.input_buf[-(self.block_size + self.extra_size) :]
         mel_spec = make_mel_spec(audio_for_mel[None, :], sr=self.sr)
 
         # Encoder: content + F0 + energy
@@ -99,6 +110,8 @@ class StreamingInfer:
 
         # Convert back to int16
         out_int16 = (out_chunk * 32768.0).clip(-32768, 32767).astype(np.int16)
+        import pyaudio  # noqa: F811  — same lazy import as at top of callback
+
         return (out_int16.tobytes(), pyaudio.paContinue)
 
     def _is_silence(self, in_bytes: bytes) -> bool:
@@ -134,32 +147,31 @@ class StreamingInfer:
         out[:cf] = cf_window * new_chunk[:cf] + (1 - cf_window) * tail[:cf]
 
         # Save tail for next chunk
-        self.last_output_tail = np.concatenate([
-            tail[cf:],
-            new_chunk[cf: cf + ss + ld]
-        ])
+        self.last_output_tail = np.concatenate([tail[cf:], new_chunk[cf : cf + ss + ld]])
         return out[: self.block_size]
 
     def start(self):
         """Open PyAudio streams and start streaming."""
+        import pyaudio  # lazy: only needed when actually opening audio I/O
+
         self.pa = pyaudio.PyAudio()
-        a = self.cfg['audio']
+        a = self.cfg["audio"]
         self.in_stream = self.pa.open(
-            format=getattr(pyaudio, a['format']),
-            channels=a['channels'],
-            rate=a['sample_rate'],
+            format=getattr(pyaudio, a["format"]),
+            channels=a["channels"],
+            rate=a["sample_rate"],
             input=True,
-            input_device_index=a['input_device'],
-            frames_per_buffer=a['block_size'],
+            input_device_index=a["input_device"],
+            frames_per_buffer=a["block_size"],
             stream_callback=self.audio_callback,
         )
         self.out_stream = self.pa.open(
-            format=getattr(pyaudio, a['format']),
-            channels=a['channels'],
-            rate=a['sample_rate'],
+            format=getattr(pyaudio, a["format"]),
+            channels=a["channels"],
+            rate=a["sample_rate"],
             output=True,
-            output_device_index=a['output_device'],
-            frames_per_buffer=a['block_size'],
+            output_device_index=a["output_device"],
+            frames_per_buffer=a["block_size"],
         )
         self.in_stream.start_stream()
         self.out_stream.start_stream()
@@ -167,6 +179,7 @@ class StreamingInfer:
         try:
             while self.in_stream.is_active():
                 import time
+
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.stop()

@@ -11,8 +11,8 @@ This file is therefore a thin shim for now.
 P2-4 plan: add RMVPE as an optional high-quality F0 fallback path, configurable
            in configs/default.yaml: pitch.use_rmvpe_fallback.
 """
+
 import numpy as np
-from typing import Optional
 
 
 class PitchExtractor:
@@ -24,21 +24,19 @@ class PitchExtractor:
           vocals.
     """
 
-    def __init__(self, use_rmvpe_fallback: bool = False,
-                 rmvpe_model_path: Optional[str] = None):
+    def __init__(self, use_rmvpe_fallback: bool = False, rmvpe_model_path: str | None = None):
         self.use_rmvpe_fallback = use_rmvpe_fallback
         self.rmvpe_session = None
         if use_rmvpe_fallback:
             if rmvpe_model_path is None:
                 raise ValueError("rmvpe_model_path required when use_rmvpe_fallback=True")
             import onnxruntime as ort
+
             self.rmvpe_session = ort.InferenceSession(
-                rmvpe_model_path,
-                providers=['CPUExecutionProvider']
+                rmvpe_model_path, providers=["CPUExecutionProvider"]
             )
 
-    def extract_or_fallback(self, mel_spec: np.ndarray,
-                            encoder_f0: np.ndarray) -> np.ndarray:
+    def extract_or_fallback(self, mel_spec: np.ndarray, encoder_f0: np.ndarray) -> np.ndarray:
         """If RMVPE fallback is enabled and encoder F0 looks unreliable,
         re-extract via RMVPE. Otherwise just return encoder_f0.
 

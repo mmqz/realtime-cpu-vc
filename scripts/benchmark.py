@@ -30,8 +30,8 @@ import importlib
 import json
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional, Tuple
 
 import numpy as np
 import psutil
@@ -52,7 +52,7 @@ CAMPPLUS_DIM: int = 192
 # Metric 1: RTF
 # ---------------------------------------------------------------------------
 def measure_rtf(infer_fn: Callable, source_wav_path: str,
-                duration_s: float = 1.0) -> Tuple[float, np.ndarray]:
+                duration_s: float = 1.0) -> tuple[float, np.ndarray]:
     """Real-Time Factor: processing_time_s / audio_duration_s.
 
     Loads `source_wav_path`, truncates to `duration_s`, times a single
@@ -279,7 +279,7 @@ def main() -> int:
             warm_wav = warm_wav.astype(np.float32) / 32767.0
         warm_wav = warm_wav[: int(warm_sr * 0.1)]  # 100 ms warmup
         _wrapped(warm_wav, warm_sr)
-        print(f"[benchmark] warm-up OK", file=sys.stderr)
+        print("[benchmark] warm-up OK", file=sys.stderr)
     except Exception as e:  # noqa: BLE001
         print(f"[benchmark] warm-up failed (continuing): {e}", file=sys.stderr)
 

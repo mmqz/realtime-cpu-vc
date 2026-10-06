@@ -16,7 +16,6 @@ Usage:
         --output models/voices.safetensors
 """
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -24,9 +23,8 @@ import numpy as np
 import torch
 from safetensors.torch import save_file
 
-# Add repo root to path for module imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.encoder import Encoder, make_mel_spec
+# vc_realtime is installed via `pip install -e .` (see pyproject.toml).
+from vc_realtime.encoder import Encoder, make_mel_spec
 
 
 def load_wav(path: str, sr: int = 24000) -> np.ndarray:

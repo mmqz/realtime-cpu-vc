@@ -34,7 +34,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.speaker_encoder_v3 import BiCodecSpeakerEncoder, make_spark_mel_spec
+from vc_realtime.speaker_encoder_v3 import BiCodecSpeakerEncoder, make_spark_mel_spec
 
 
 def load_wav(path: str, target_sr: int = 16000) -> np.ndarray:

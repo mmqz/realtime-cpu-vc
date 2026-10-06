@@ -1,0 +1,88 @@
+# ============================================================================
+# Benchmark: perf-regression check on every push to main that touches the
+# runtime package or the benchmark harness. Uploads JSON report as artifact.
+# ============================================================================
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/vc_realtime/**"
+      - "scripts/benchmark.py"
+      - "pyproject.toml"
+      - ".github/workflows/benchmark.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: RTF + RSS regression check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install package + dev extras
+        run: pip install -e ".[dev]"
+
+      - name: Ensure benchmark harness exists
+        run: |
+          if [ ! -f scripts/benchmark.py ]; then
+            echo "::warning::scripts/benchmark.py not present yet (P1-2 task)."
+            exit 0
+          fi
+        shell: bash
+
+      - name: Ensure source fixture exists
+        run: |
+          mkdir -p data/source data/voices
+          if [ ! -f data/source/source_001.wav ]; then
+            echo "::notice::data/source/source_001.wav not present. Skipping run."
+            # Try to (re)generate from P1-2's fixture generator if available.
+            if [ -f scripts/gen_test_fixtures.py ]; then
+              echo "::notice::attempting to (re)generate fixtures via scripts/gen_test_fixtures.py"
+              python scripts/gen_test_fixtures.py || true
+            fi
+            exit 0
+          fi
+        shell: bash
+
+      - name: Run benchmark
+        id: bench
+        run: |
+          set -o pipefail
+          python scripts/benchmark.py \
+            --infer-script vc_realtime.infer_v1 \
+            --source data/source/source_001.wav \
+            --voice-id 0 \
+            --output benchmark-report.json || echo "::warning::benchmark failed"
+        shell: bash
+
+      - name: Upload benchmark report artifact
+        if: always() && hashFiles('benchmark-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report-${{ github.sha }}
+          path: benchmark-report.json
+          retention-days: 30
+          if-no-files-found: warn

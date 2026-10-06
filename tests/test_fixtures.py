@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -97,9 +96,6 @@ def test_voice_wavs_are_distinct():
             a -= a.mean()
             b -= b.mean()
             denom = float(np.linalg.norm(a) * np.linalg.norm(b))
-            if denom < 1e-8:
-                corr = 0.0
-            else:
-                corr = float(np.dot(a, b) / denom)
+            corr = 0.0 if denom < 1e-8 else float(np.dot(a, b) / denom)
             assert abs(corr) < 0.95, (
                 f"{v1.name} and {v2.name} are too similar (corr={corr:.3f})")

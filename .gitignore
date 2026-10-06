@@ -1,4 +1,6 @@
+# ============================================================================
 # Python
+# ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,29 +9,56 @@ __pycache__/
 .venv/
 venv/
 env/
+build/
+dist/
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
 
-# Model weights (downloaded, not committed)
-models/*.pt
-models/*.onnx
-models/*.int8.onnx
-models/*.safetensors
-models/*.npz
+# ----------------------------------------------------------------------------
+# Model weights — downloaded by subagents / users from HuggingFace, never
+# committed. Each ONNX/torch artifact is 5–25 MB; total v3 footprint ~29 MB.
+# ----------------------------------------------------------------------------
+models/
+!models/.gitkeep
 
-# Data — generated fixtures are committed (small, deterministic seeds)
-# Large real-audio downloads may go to data/test/ which stays ignored.
+# ----------------------------------------------------------------------------
+# Data fixtures — large wav files (5 voices × 30 s × 24 kHz ≈ 14 MB), may be
+# large or contain personal voice data. P1-2 generates synthetic ones locally.
+# ----------------------------------------------------------------------------
+data/source/*.wav
+data/voices/*.wav
 data/test/*.wav
-data/cache/
+!data/.gitkeep
+!data/source/.gitkeep
+!data/voices/.gitkeep
 
-# Benchmarks / logs
+# ----------------------------------------------------------------------------
+# Future v2.0 weights — GGML quantized Rust weights (after src_rust rewrite)
+# ----------------------------------------------------------------------------
+*.gguf
+*.ggml
+
+# ----------------------------------------------------------------------------
+# Vendored C/C++ dependencies — downloaded by scripts/vendor_c_deps.sh in the
+# P1 v2.0 task; do NOT commit vendored upstream source trees.
+# ----------------------------------------------------------------------------
+src_c/miniaudio/
+src_c/ggml/
+src_c/libonnxruntime/
+
+# ----------------------------------------------------------------------------
+# Editor / OS / logs
+# ----------------------------------------------------------------------------
 benchmark.txt
+benchmark-report.json
 *.log
-
-# Editor
 .vscode/
 .idea/
 *.swp
 .DS_Store
-
-# OS
 Thumbs.db

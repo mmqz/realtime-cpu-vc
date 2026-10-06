@@ -22,16 +22,18 @@ import argparse
 import os
 import sys
 import time
-import yaml
-from pathlib import Path
 
-# Add repo root to path
+import yaml
+
+# Add repo root to path (so `configs/` is discoverable when running from a checkout
+# without `pip install -e .`). When the package is installed, `vc_realtime` is
+# already on sys.path and this line is a harmless no-op.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modules.encoder import Encoder
-from modules.decoder import Decoder
-from modules.knn_retrieval import KNNRetrieval
-from modules.streaming import StreamingInfer
+from vc_realtime.decoder import Decoder
+from vc_realtime.encoder import Encoder
+from vc_realtime.knn_retrieval import KNNRetrieval
+from vc_realtime.streaming import StreamingInfer
 
 
 def load_config(path: str) -> dict:
@@ -41,7 +43,6 @@ def load_config(path: str) -> dict:
 
 def build_pipeline(config: dict):
     """Construct the Encoder → KNN → Decoder → StreamingInfer pipeline."""
-    a = config['audio']
     ort_cfg = config['ort']
 
     print(f"Loading encoder: {ort_cfg['encoder_model']}")
@@ -69,8 +70,9 @@ def benchmark_mode(streamer: StreamingInfer, duration_s: int = 30):
     compute path only. Latency = compute latency + algorithmic latency
     (the latter derived from config).
     """
-    import numpy as np
     import resource
+
+    import numpy as np
 
     print(f"Benchmark mode: {duration_s}s synthetic input")
     cfg = streamer.cfg['audio']
@@ -81,15 +83,15 @@ def benchmark_mode(streamer: StreamingInfer, duration_s: int = 30):
 
     # Synthetic input: white noise (silent test, measures pure compute)
     latencies = []
-    for i in range(n_blocks):
+    for _ in range(n_blocks):
         t0 = time.perf_counter()
         # Simulate one chunk through the pipeline
         chunk = np.random.randn(block).astype(np.float32) * 0.01
-        mel_spec = __import__('modules.encoder', fromlist=['make_mel_spec']).make_mel_spec(
+        mel_spec = __import__('vc_realtime.encoder', fromlist=['make_mel_spec']).make_mel_spec(
             chunk[None, :])
         content, f0, energy = streamer.enc.encode(mel_spec)
         content_r = streamer.knn.replace(content)
-        wav = streamer.dec.decode(content_r, f0, energy)
+        streamer.dec.decode(content_r, f0, energy)
         t1 = time.perf_counter()
         latencies.append((t1 - t0) * 1000)
 
@@ -108,7 +110,7 @@ def benchmark_mode(streamer: StreamingInfer, duration_s: int = 30):
     print(f"  RSS: {rss_mb:.1f} MB")
     rtf = latencies.mean() / (block / sr * 1000)
     print(f"  RTF: {rtf:.3f} (<1 = real-time)")
-    print(f"  Target: <500ms E2E, <110MB RSS, RTF <0.5")
+    print("  Target: <500ms E2E, <110MB RSS, RTF <0.5")
     if latencies.mean() + algo_lat < 500 and rss_mb < 110:
         print("  ✓ PASS")
     else:

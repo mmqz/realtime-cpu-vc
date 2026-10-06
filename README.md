@@ -1,4 +1,4 @@
-# Real-time CPU Voice Conversion (VC) — Lightweight Prototype
+# Real-time CPU Voice Conversion (VC) — Python v1.0 prototype
 
 > **Goal**: Real-time voice conversion on pure CPU, ~100 MB RAM, 300–500 ms latency, 5 fixed target voices × 30 s reference.
 >
@@ -6,7 +6,9 @@
 >
 > **v2 hybrid**: Replace kNN-VC with OpenVoice v2 256-d ReferenceEncoder (0.76 M, 1 MB INT8) + ResidualCoupling flow (8.7 M, 9 MB INT8); replace DDSP with F5-TTS Vocos vocoder (13 M, 7 MB INT8). Expected: +3-5% similarity, MOS +0.2-0.3, RSS ~85 MB.
 >
-> **v3 incremental upgrade** (NEW, Round 3): Replace OpenVoice v2 256-d ReferenceEncoder with Spark-TTS BiCodec SpeakerEncoder (ECAPA-TDNN c512 + Perceiver + ResidualFSQ, 6-12 M, 5 MB INT8, 48-byte FSQ code per voice). Expected: +1-2% similarity (→ 90-94%), RSS ~89 MB.
+> **v3 incremental upgrade**: Replace OpenVoice v2 256-d ReferenceEncoder with Spark-TTS BiCodec SpeakerEncoder (ECAPA-TDNN c512 + Perceiver + ResidualFSQ, 6-12 M, 5 MB INT8, 48-byte FSQ code per voice). Expected: +1-2% similarity (→ 90-94%), RSS ~89 MB.
+>
+> **v4 two-phase**: v1.0 = Python complete (correctness + modularity, this repo today); v2.0 = Rust+C rewrite (performance, `src_rust/` + `src_c/`).
 
 After analyzing **17 open-source VC/TTS repositories** (Round 1: 5 repos, Round 2: 6 repos, Round 3: 6 repos), the v3 hybrid architecture sits at the optimal point of the Pareto curve for "CPU ≤100 MB + real-time + good VC quality". This repo contains the full analysis + Python prototype skeleton.
 
@@ -15,36 +17,53 @@ After analyzing **17 open-source VC/TTS repositories** (Round 1: 5 repos, Round 
 ```
 .
 ├── README.md                              ← you are here
-├── analysis.md                            ← v1 bilingual analysis (Markdown mirror of PDF 1)
-├── realtime-cpu-vc-tech-brief.pdf         ← v1 report (16 pages, Round 1: Seed-VC / TinyVC / RVC / Fish-Speech / PocketTTS)
-├── realtime-cpu-vc-supplement-v2.pdf      ← v2 supplement (10 pages, Round 2: OpenVoice v2 / FreeVC / GPT-SoVITS / Applio / F5-TTS / CosyVoice2 + v2 hybrid)
-├── realtime-cpu-vc-supplement-v3.pdf      ← v3 supplement (7 pages, Round 3: Spark-TTS / IndexTTS / MaskGCT / Orpheus / StyleTTS-2 / Piper + v3 hybrid)
+├── analysis.md                            ← v1 bilingual analysis (Markdown)
+├── pyproject.toml                         ← PEP 621 package + ruff/mypy/pytest config
+├── .pre-commit-config.yaml                ← ruff + mypy + hygiene hooks
+├── .github/workflows/
+│   ├── ci.yml                             ← lint + type-check + test on PR
+│   └── benchmark.yml                      ← RTF + RSS regression on main push
 ├── docs/
-│   ├── checklist.md                       ← P0/P1/P2 actionable checklist (v1 + v2 + v3 tasks)
-│   ├── architecture.md                     ← module-level architecture + data flow (v1 + v2 + v3)
+│   ├── checklist.md                       ← P0/P1/P2 actionable checklist (v1 + v2 + v3)
+│   ├── architecture.md                    ← module-level architecture + data flow (v1 + v2 + v3)
 │   └── deployment.md                      ← x86 / ARM deployment notes
-├── requirements.txt
 ├── configs/
 │   ├── default.yaml                       ← v1 runtime config (TinyVC + kNN + DDSP)
 │   ├── v2_hybrid.yaml                     ← v2 runtime config (OpenVoice encoder + flow + Vocos)
-│   └── v3_hybrid.yaml                     ← v3 runtime config (Spark BiCodec encoder + OpenVoice flow + Vocos)
-├── modules/
-│   ├── __init__.py
-│   ├── encoder.py                         ← v1: TinyVC SSLFeatureEstimator skeleton
-│   ├── decoder.py                         ← v1: TinyVC DDSP decoder skeleton
-│   ├── knn_retrieval.py                   ← v1: kNN-VC feature replacement (default.yaml)
-│   ├── speaker_encoder.py                 ← v2 NEW: OpenVoice v2 ReferenceEncoder (256-d)
-│   ├── speaker_encoder_v3.py              ← v3 NEW: Spark-TTS BiCodec SpeakerEncoder (512-d + FSQ)
-│   ├── flow.py                            ← v2 NEW: OpenVoice v2 ResidualCouplingBlock flow
-│   ├── vocoder_v2.py                      ← v2 NEW: F5-TTS Vocos vocoder (replaces DDSP)
-│   ├── pitch.py                           ← v1: TinyVC PitchEstimator wrapper
-│   └── streaming.py                       ← v1+v2+v3: SOLA streaming shell + ORT session runner
-└── scripts/
-    ├── register_voices.py                 ← v1: 5 voices × 30 s → voices.safetensors (kNN index)
-    ├── register_voices_v2.py              ← v2 NEW: 5 voices → se_<id>.pth (256-d embeddings)
-    ├── register_voices_v3.py              ← v3 NEW: 5 voices → se_<id>.fsq (48-byte FSQ codes) + se_<id>.pth (512-d)
-    ├── quantize_int8.py                   ← ONNX dynamic INT8 quantization
-    └── realtime_infer.py                  ← runtime entry (PyTorch or ORT mode)
+│   ├── v3_hybrid.yaml                     ← v3 runtime config (Spark BiCodec encoder + OpenVoice flow + Vocos)
+│   └── v4_two_phase.yaml                  ← v4 runtime config (Python + Rust swap boundary)
+├── src/
+│   └── vc_realtime/                       ← proper PEP 621 Python package (this directory)
+│       ├── __init__.py
+│       ├── encoder.py                     ← v1: TinyVC SSLFeatureEstimator skeleton
+│       ├── decoder.py                     ← v1: TinyVC DDSP decoder skeleton
+│       ├── knn_retrieval.py               ← v1: kNN-VC feature replacement (default.yaml)
+│       ├── speaker_encoder.py             ← v2: OpenVoice v2 ReferenceEncoder (256-d)
+│       ├── speaker_encoder_v3.py           ← v3: Spark-TTS BiCodec SpeakerEncoder (512-d + FSQ)
+│       ├── flow.py                        ← v2: OpenVoice v2 ResidualCouplingBlock flow
+│       ├── vocoder_v2.py                  ← v2: F5-TTS Vocos vocoder (replaces DDSP)
+│       ├── pitch.py                       ← v1: TinyVC PitchEstimator wrapper
+│       ├── vad.py                         ← v1: sherpa-onnx silero-vad (with webrtcvad fallback)
+│       ├── streaming.py                   ← v1+v2+v3: SOLA streaming shell + ORT session runner
+│       ├── interfaces.py                  ← Python Protocols locking v1.0 ↔ v2.0 Rust swap boundary
+│       ├── cli.py                         ← `vc-infer` console-script entry point
+│       └── py.typed                       ← PEP 561 marker (package ships inline types)
+├── scripts/
+│   ├── register_voices.py                 ← v1: 5 voices × 30 s → voices.safetensors (kNN index)
+│   ├── register_voices_v2.py              ← v2: 5 voices → se_<id>.pth (256-d embeddings)
+│   ├── register_voices_v3.py              ← v3: 5 voices → se_<id>.fsq (48-byte FSQ) + se_<id>.pth (512-d)
+│   ├── quantize_int8.py                   ← ONNX dynamic INT8 quantization
+│   ├── realtime_infer.py                  ← runtime entry (PyTorch or ORT mode)
+│   ├── vendor_c_deps.sh                  ← P1 v2.0: downloads miniaudio + ggml into src_c/
+│   └── build_voices_index.py              ← dev tooling
+├── tests/                                ← pytest suite (P1-2, P1-3 will populate)
+├── configs/                               ← runtime YAMLs (default, v2_hybrid, v3_hybrid, v4_two_phase)
+├── data/                                  ← gitignored; P1-2 fills with synthetic + voice wavs
+│   ├── source/                            ← 10 synthetic source wavs (P1-2)
+│   └── voices/                            ← 5 voice samples × 30s (P1-2)
+├── models/                                ← gitignored; P1-3 downloads TinyVC encoder/decoder weights
+├── src_rust/                              ← v2.0 Rust workspace skeleton (vc-native, vc-python, vc-ort)
+└── src_c/                                 ← placeholder for vendored C/C++ (miniaudio, ggml) in P1 v2.0
 ```
 
 ## v1 → v2 → v3 Evolution
@@ -66,46 +85,66 @@ After analyzing **17 open-source VC/TTS repositories** (Round 1: 5 repos, Round 
 
 ## Quick Start
 
-### v3 hybrid (latest recommended)
+### 0. Install (one-time)
 
 ```bash
-# 1. Install deps
-pip install -r requirements.txt
+# Clone this repo, then from the repo root:
+pip install -e ".[dev]"
 
-# 2. Clone TinyVC + OpenVoice + Spark-TTS + F5-TTS source repos
+# Optional: install the pre-commit hooks
+pre-commit install
+
+# Verify install
+python3 -c "from vc_realtime.encoder import Encoder; print('Encoder class found')"
+python3 -c "from vc_realtime.interfaces import SpeakerEncoder; print('Protocol found')"
+vc-infer --help
+```
+
+### 1. v3 hybrid (latest recommended)
+
+```bash
+# 1. Clone TinyVC + OpenVoice + Spark-TTS + F5-TTS source repos
 git clone --depth 1 https://github.com/uthree/tinyvc /tmp/tinyvc
 git clone --depth 1 https://github.com/myshell-ai/OpenVoice /tmp/openvoice
 git clone --depth 1 https://github.com/SparkAudio/Spark-TTS /tmp/spark-tts
 git clone --depth 1 https://github.com/SWivid/F5-TTS /tmp/f5-tts
 
-# 3. Export + INT8 quantize all ONNX models (TBD per upstream repo)
+# 2. Export + INT8 quantize all ONNX models (TBD per upstream repo)
 #    See docs/checklist.md P0-1 to P0-11 for the exact sequence.
 
-# 4. Register 5 voices via v3 BiCodec SpeakerEncoder (FSQ codes + 512-d embeddings)
+# 3. Register 5 voices via v3 BiCodec SpeakerEncoder (FSQ codes + 512-d embeddings)
 python scripts/register_voices_v3.py \
     --voices-dir data/voices \
     --speaker-encoder-onnx models/spark_speaker_encoder.onnx \
     --output-dir models/
 
-# 5. Run with v3 config
-python scripts/realtime_infer.py --voice-id 0 --config configs/v3_hybrid.yaml
+# 4. Run with v3 config
+vc-infer --voice-id 0 --config v3_hybrid
+# (equivalent to: python scripts/realtime_infer.py --voice-id 0 --config configs/v3_hybrid.yaml)
 ```
 
-### v2 hybrid (older, smaller RAM)
+### 2. v2 hybrid (older, smaller RAM)
 
 ```bash
 python scripts/register_voices_v2.py \
     --voices-dir data/voices \
     --ref-encoder-onnx models/openvoice_ref_encoder.onnx \
     --output-dir models/
-python scripts/realtime_infer.py --voice-id 0 --config configs/v2_hybrid.yaml
+vc-infer --voice-id 0 --config v2_hybrid
 ```
 
-### v1 baseline (TinyVC only, simplest)
+### 3. v1 baseline (TinyVC only, simplest)
 
 ```bash
 python scripts/register_voices.py --voices-dir data/voices --output models/voices.safetensors
-python scripts/realtime_infer.py --voice-id 0 --config configs/default.yaml
+vc-infer --voice-id 0 --config default
+```
+
+### 4. Headless benchmark (no audio hardware)
+
+```bash
+vc-infer --voice-id 0 --config default --benchmark --duration 30
+# Or: python scripts/realtime_infer.py --voice-id 0 --config configs/default.yaml --benchmark --duration 30
 ```
 
 ## 17-Repo Pareto Curve (final, after Round 3)
@@ -130,12 +169,39 @@ python scripts/realtime_infer.py --voice-id 0 --config configs/default.yaml
 | Orpheus-TTS | n/a | ~1.8 GB (Q4) | ✗✗ | Llama-3.2-3B (watch for future 400M variant) |
 | Fish-Speech | n/a | ~1 GB+ | ✗✗✗ | NC license, DualAR 4B |
 
-## Detailed Analysis (3 reports, 33 pages total)
+## Development
 
-- [`realtime-cpu-vc-tech-brief.pdf`](./realtime-cpu-vc-tech-brief.pdf) — v1 report (16 pp, Round 1: 5 repos)
-- [`realtime-cpu-vc-supplement-v2.pdf`](./realtime-cpu-vc-supplement-v2.pdf) — v2 supplement (10 pp, Round 2: 6 new repos + v2 hybrid)
-- [`realtime-cpu-vc-supplement-v3.pdf`](./realtime-cpu-vc-supplement-v3.pdf) — v3 supplement (7 pp, Round 3: 6 new repos + v3 hybrid)
-- [`analysis.md`](./analysis.md) — Markdown mirror of v1 report
+### Lint, type-check, test
+
+```bash
+ruff check src/ tests/ scripts/         # lint (PEP 8 + isort + bugbear + modernize)
+ruff format --check src/ tests/ scripts/ # format check (no rewrite)
+mypy src/vc_realtime/                    # strict type-check (warnings OK, errors fail)
+pytest tests/ -v                         # run tests
+```
+
+### CI
+
+GitHub Actions runs on every PR to `main` and every push to `main`:
+
+- `.github/workflows/ci.yml` — ruff + mypy + pytest on Python 3.12.
+- `.github/workflows/benchmark.yml` — RTF + RSS regression check (only when
+  `src/vc_realtime/` or `scripts/benchmark.py` change). Uploads the JSON
+  report as a 30-day artifact.
+
+### v1.0 ↔ v2.0 swap boundary
+
+`src/vc_realtime/interfaces.py` defines PEP 544 Protocols for every runtime
+module: `ContentEncoder`, `PitchExtractor`, `SpeakerEncoder`,
+`SpeakerConditioner`, `Vocoder`, `VAD`, `StreamingInfer`. The current Python
+implementations satisfy these Protocols structurally. The future v2.0 Rust
+rewrite (in `src_rust/`) will provide PyO3 classes implementing the same
+Protocols, so the streaming shell and benchmark harness can swap
+implementations without touching call sites.
+
+## Detailed Analysis
+
+- [`analysis.md`](./analysis.md) — v1 analysis (Markdown mirror of Round 1 report)
 - [`docs/checklist.md`](./docs/checklist.md) — P0/P1/P2 actionable checklist (v1 + v2 + v3 new tasks)
 - [`docs/architecture.md`](./docs/architecture.md) — module-by-module architecture (v1 + v2 + v3)
 - [`docs/deployment.md`](./docs/deployment.md) — x86 / ARM deployment notes
@@ -160,6 +226,6 @@ This prototype builds on the work of:
 
 ## License
 
-Prototype code in this repo is MIT-licensed. See [`LICENSE`](./LICENSE). The analysis reports (PDF + Markdown) are CC-BY 4.0.
+Prototype code in this repo is MIT-licensed. See [`LICENSE`](./LICENSE). The analysis reports (Markdown) are CC-BY 4.0.
 
 > ⚠️ **License alert**: The v3 hybrid path uses TinyVC (Apache 2.0), OpenVoice v2 (MIT), Spark-TTS BiCodec SpeakerEncoder (Apache 2.0), and F5-TTS code/export scripts (MIT, not the weights) — keeping the system permissive for commercial use. Avoid incorporating Seed-VC (GPL v3), Fish-Speech (non-commercial), F5-TTS weights (CC-BY-NC), or IndexTTS code (Bilibili non-OSS) into the runtime.

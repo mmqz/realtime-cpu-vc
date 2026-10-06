@@ -198,7 +198,6 @@ def gen_008() -> np.ndarray:
 def gen_009() -> np.ndarray:
     """2 s sustained vowel-like 'ah' + 3 s silence."""
     sustained_n = int(2.0 * SR)
-    t_short = np.arange(sustained_n) / SR
     # Glottal source at 110 Hz
     f0 = 110.0
     period = int(SR / f0)

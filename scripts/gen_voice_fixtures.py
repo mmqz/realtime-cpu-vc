@@ -162,8 +162,8 @@ def synthesize_voice(spec: dict, seed: int = 1234) -> np.ndarray:
 def _try_vctk() -> bool:
     """Attempt to download 5 VCTK speakers. Return True on success."""
     try:
-        from huggingface_hub import hf_hub_download
         import librosa
+        from huggingface_hub import hf_hub_download
     except Exception as e:  # noqa: BLE001
         print(f"  [vctk] cannot import deps: {e}", file=sys.stderr)
         return False

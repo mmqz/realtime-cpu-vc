@@ -17,10 +17,11 @@ Inference flow:
 Note: in TinyVC's exported ONNX, content + F0 + energy are returned as
 multiple outputs of a single graph. This wrapper decodes them.
 """
+
 import os
+
 import numpy as np
 import onnxruntime as ort
-from typing import Tuple
 
 
 class Encoder:
@@ -30,8 +31,7 @@ class Encoder:
     where T_frames = audio_samples / 480 (hop=480 at 24 kHz).
     """
 
-    def __init__(self, model_path: str, intra_op_threads: int = 2,
-                 inter_op_threads: int = 1):
+    def __init__(self, model_path: str, intra_op_threads: int = 2, inter_op_threads: int = 1):
         if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"Encoder ONNX not found at {model_path}. "
@@ -42,11 +42,10 @@ class Encoder:
         so.inter_op_num_threads = inter_op_threads
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            model_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
 
-    def encode(self, mel_spec: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def encode(self, mel_spec: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Run content + F0 + energy extraction.
 
         Args:
@@ -64,8 +63,9 @@ class Encoder:
         return content_feat, f0, energy
 
 
-def make_mel_spec(audio: np.ndarray, sr: int = 24000, n_fft: int = 1920,
-                  hop: int = 480, n_mels: int = 128) -> np.ndarray:
+def make_mel_spec(
+    audio: np.ndarray, sr: int = 24000, n_fft: int = 1920, hop: int = 480, n_mels: int = 128
+) -> np.ndarray:
     """Compute mel-spectrogram for TinyVC encoder input.
 
     Args:
@@ -79,11 +79,17 @@ def make_mel_spec(audio: np.ndarray, sr: int = 24000, n_fft: int = 1920,
         mel_spec: [B, n_mels, T_frames] float32
     """
     import librosa
+
     # librosa.power_to_db gives the log-mel TinyVC expects
     mel = librosa.feature.melspectrogram(
-        y=audio.squeeze().astype(np.float32), sr=sr,
-        n_fft=n_fft, hop_length=hop, n_mels=n_mels,
-        fmin=20, fmax=12000, power=2.0
+        y=audio.squeeze().astype(np.float32),
+        sr=sr,
+        n_fft=n_fft,
+        hop_length=hop,
+        n_mels=n_mels,
+        fmin=20,
+        fmax=12000,
+        power=2.0,
     )
     mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
     # normalize to roughly [-4, +4] range

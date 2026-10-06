@@ -1,0 +1,186 @@
+# ============================================================================
+# pyproject.toml — vc-realtime (PEP 621)
+# ============================================================================
+# Real-time CPU voice conversion: v3 hybrid architecture (TinyVC encoder +
+# Spark BiCodec SpeakerEncoder + OpenVoice ResidualCoupling flow + F5-TTS
+# Vocos vocoder). Python v1.0 path; Rust+C v2.0 will reuse the same Protocols.
+# ============================================================================
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vc-realtime"
+version = "0.1.0"
+description = "Real-time CPU voice conversion: TinyVC + Spark BiCodec + OpenVoice flow + F5-TTS Vocos."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "mmqz" },
+]
+keywords = ["voice-conversion", "real-time", "cpu", "onnx", "tinyvc", "openvoice", "spark-tts"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# ----------------------------------------------------------------------------
+# Runtime dependencies
+# ----------------------------------------------------------------------------
+# torch / torchaudio are pinned to the CPU build via --extra-index-url
+# https://download.pytorch.org/whl/cpu — no version pin so any CPU wheel from
+# 2.4 onwards satisfies. When installing in an environment that already has a
+# torch (CPU or CUDA), pip reuses the existing install.
+# ----------------------------------------------------------------------------
+dependencies = [
+    "torch",
+    "torchaudio",
+    "onnxruntime>=1.18",
+    "sherpa-onnx",
+    "librosa>=0.10",
+    "soundfile",
+    "psutil",
+    "safetensors",
+    "pyyaml",
+    "einops",
+    "munch",
+    "transformers",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Dev tooling: lint, type-check, test, pre-commit hooks.
+dev = [
+    "pytest",
+    "pytest-benchmark",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+# ----------------------------------------------------------------------------
+# Console scripts
+# ----------------------------------------------------------------------------
+[project.scripts]
+vc-infer = "vc_realtime.cli:main"
+
+# ----------------------------------------------------------------------------
+# Setuptools src-layout configuration
+# ----------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vc_realtime = ["py.typed"]
+
+# ============================================================================
+# Ruff — line-length 100, target py310, PEP 8 + modern Python rule set
+# ============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W  : pycodestyle (PEP 8) errors + warnings
+# F    : pyflakes (unused imports, undefined names)
+# I    : isort (import ordering)
+# UP   : pyupgrade (modern Python idioms)
+# B    : flake8-bugbear (common gotchas)
+# SIM  : flake8-simplify (cleaner Python)
+# C4   : flake8-comprehensions (list/dict/set comprehension idioms)
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+# Allow unused arguments when explicitly opted-out via `_` prefix or `unused`
+# decorator; allow *args / **kwargs to remain unnamed in some signatures.
+ignore = [
+    "B008",   # function-call-in-default-argument (common in ORT wrappers)
+    "B904",   # raise-without-from inside ONNX error paths we re-wrap
+    "E501",   # line-too-long handled by formatter; we accept long docstrings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]   # tests may sys.path-twiddle before imports
+"scripts/*" = ["E402"] # CLI scripts legitimately sys.path.insert before import
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ============================================================================
+# mypy — strict mode (torch intrinsic overloads get `# type: ignore` opt-out)
+# ============================================================================
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+
+# torch / onnxruntime / sherpa_onnx ship no inline types in some builds.
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "torchaudio.*",
+    "onnxruntime.*",
+    "sherpa_onnx.*",
+    "librosa.*",
+    "soundfile.*",
+    "safetensors.*",
+    "psutil.*",
+    "yaml.*",
+    "einops.*",
+    "munch.*",
+    "transformers.*",
+    "pyaudio.*",
+    "webrtcvad.*",
+]
+ignore_missing_imports = true
+
+# Legacy skeleton modules (moved from modules/) have placeholder bodies and
+# partial annotations; they will be tightened by P1-3/P1-4. Until then,
+# disable the strict-only checks that produce the most noise on skeletons.
+[[tool.mypy.overrides]]
+module = [
+    "vc_realtime.encoder",
+    "vc_realtime.decoder",
+    "vc_realtime.knn_retrieval",
+    "vc_realtime.pitch",
+    "vc_realtime.speaker_encoder",
+    "vc_realtime.speaker_encoder_v3",
+    "vc_realtime.flow",
+    "vc_realtime.vocoder_v2",
+    "vc_realtime.vad",
+    "vc_realtime.streaming",
+    "vc_realtime.cli",
+]
+disable_error_code = [
+    "type-arg",        # np.ndarray without NDArray parametrization
+    "no-untyped-def",  # legacy signatures lack annotations
+    "no-untyped-call", # legacy calls in typed context
+    "union-attr",      # Optional[X] attribute access (initialized in __init__)
+    "attr-defined",    # Optional[X] attribute after None-check
+    "assignment",
+]
+
+# ============================================================================
+# pytest — collect from tests/, verbose, short tracebacks
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning:torch.*",
+    "ignore::DeprecationWarning:onnxruntime.*",
+]

@@ -20,8 +20,8 @@ Usage:
     python scripts/quantize_int8.py --models-dir models/ --per-tensor  # faster, less accurate
 """
 import argparse
-import os
 from pathlib import Path
+
 import onnxruntime.quantization as ort_q
 
 
@@ -29,7 +29,7 @@ def quantize_subgraph(fp32_path: Path, int8_path: Path, per_channel: bool = True
     """Apply dynamic INT8 PTQ to a single ONNX sub-graph."""
     print(f"  Quantizing {fp32_path.name} -> {int8_path.name}")
     print(f"    per_channel: {per_channel}")
-    print(f"    op_types: ['MatMul', 'Gemm', 'Conv']")
+    print("    op_types: ['MatMul', 'Gemm', 'Conv']")
     ort_q.quantize_dynamic(
         model_input=str(fp32_path),
         model_output=str(int8_path),

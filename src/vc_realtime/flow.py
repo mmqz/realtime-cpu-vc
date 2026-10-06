@@ -23,7 +23,9 @@ Usage:
   # At runtime, given source content + se_src + se_tgt:
   content_disentangled = flow.apply(content_feat, se_src, se_tgt)
 """
+
 import os
+
 import numpy as np
 import onnxruntime as ort
 
@@ -46,20 +48,17 @@ class SpeakerFlow:
     def __init__(self, model_path: str, intra_op_threads: int = 2):
         if not os.path.exists(model_path):
             raise FileNotFoundError(
-                f"Speaker flow ONNX not found at {model_path}. "
-                f"Export from OpenVoice v2 source."
+                f"Speaker flow ONNX not found at {model_path}. Export from OpenVoice v2 source."
             )
         so = ort.SessionOptions()
         so.intra_op_num_threads = intra_op_threads
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(
-            model_path, sess_options=so,
-            providers=['CPUExecutionProvider']
+            model_path, sess_options=so, providers=["CPUExecutionProvider"]
         )
 
-    def apply(self, content_feat: np.ndarray, se_src: np.ndarray,
-              se_tgt: np.ndarray) -> np.ndarray:
+    def apply(self, content_feat: np.ndarray, se_src: np.ndarray, se_tgt: np.ndarray) -> np.ndarray:
         """Run the flow forward (src → tgt) on content features.
 
         Args:
@@ -89,11 +88,11 @@ class SpeakerFlow:
         input_names = [i.name for i in self.session.get_inputs()]
         feed = {}
         for name in input_names:
-            if 'content' in name.lower() or 'x' == name:
+            if "content" in name.lower() or name == "x":
                 feed[name] = content_feat.astype(np.float32)
-            elif 'src' in name.lower():
+            elif "src" in name.lower():
                 feed[name] = se_src.astype(np.float32)
-            elif 'tgt' in name.lower():
+            elif "tgt" in name.lower():
                 feed[name] = se_tgt.astype(np.float32)
         outputs = self.session.run(None, feed)
         return outputs[0]  # [B, 768, T] disentangled content features

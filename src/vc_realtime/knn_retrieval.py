@@ -10,8 +10,8 @@ cosine-similarity top-k weighted-average replacement.
 Memory footprint:
     5 voices × [1, 768, 1500] FP16 = 5 × 2.3 MB = 11.5 MB
 """
+
 import numpy as np
-from typing import Optional
 
 
 class KNNRetrieval:
@@ -22,22 +22,21 @@ class KNNRetrieval:
     """
 
     def __init__(self, voices_path: str, top_k: int = 4):
-        from safetensors.torch import load_file
         import torch
+        from safetensors.torch import load_file
+
         self.top_k = top_k
 
         # Load all voice tensors into one tensor [n_voices, 768, T_ref]
         state = load_file(voices_path)
-        voice_keys = sorted([k for k in state if 'voice_' in k])
+        voice_keys = sorted([k for k in state if "voice_" in k])
         if len(voice_keys) == 0:
             raise ValueError(f"No voice tensors found in {voices_path}")
         # Squeeze the batch dim, stack
         voices = [state[k].squeeze(0) for k in voice_keys]  # each [768, T_ref]
         self.voices = torch.stack(voices, dim=0).to(torch.float32)  # [N, 768, T_ref]
         # Normalize along channel dim for cosine similarity
-        self.voices_norm = self.voices / (
-            self.voices.norm(dim=1, keepdim=True) + 1e-8
-        )
+        self.voices_norm = self.voices / (self.voices.norm(dim=1, keepdim=True) + 1e-8)
         self.n_voices = self.voices.shape[0]
         self.current_voice_idx = 0
 
@@ -55,21 +54,20 @@ class KNNRetrieval:
             target_feat: [B=1, 768, T] float32 (same shape, content replaced)
         """
         import torch
+
         src = torch.from_numpy(source_feat).squeeze(0)  # [768, T]
-        T = src.shape[1]
         src_norm = src / (src.norm(dim=0, keepdim=True) + 1e-8)  # [768, T]
 
         # Target voice: [768, T_ref]
         target = self.voices_norm[self.current_voice_idx]  # [768, T_ref]
-        T_ref = target.shape[1]
 
         # Cosine similarity per frame: src[:, t] · target[:, r] for all t, r
         # Compute via einsum: [T, T_ref]
-        sim = torch.einsum('ct,cr->tr', src_norm, target)  # [T, T_ref]
+        sim = torch.einsum("ct,cr->tr", src_norm, target)  # [T, T_ref]
 
         # Top-k weighted average: 1/score^2 weighting (kNN-VC standard)
         topk_vals, topk_idx = torch.topk(sim, k=self.top_k, dim=-1)  # [T, k]
-        weights = 1.0 / (topk_vals ** 2 + 1e-8)  # [T, k]
+        weights = 1.0 / (topk_vals**2 + 1e-8)  # [T, k]
         weights = weights / weights.sum(dim=-1, keepdim=True)
         # Gather target features for top-k indices
         # target[topk_idx] shape: [T, k, 768]
