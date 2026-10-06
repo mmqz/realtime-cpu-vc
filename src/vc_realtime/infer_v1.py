@@ -303,6 +303,55 @@ class V1Infer:
         return out.cpu().numpy().squeeze()
 
     # ------------------------------------------------------------------
+    # Internal: encode → (optional pitch shift) → kNN replace → decode
+    # ------------------------------------------------------------------
+    def _run_pipeline(
+        self,
+        wav: np.ndarray,
+        voice_id: int = 0,
+        pitch_shift_semitones: float = 0.0,
+    ) -> np.ndarray:
+        """Run the core VC pipeline on already-preprocessed wav.
+
+        Expects ``wav`` to be 24 kHz mono float32, peak-normalized (caller's
+        responsibility). Shared by :meth:`process_audio` (single shot) and
+        :meth:`process_audio_chunked` (chunked, so PyTorch does not cache
+        large intermediate tensors for long inputs).
+        """
+        content, f0, energy = self.encode(wav)
+
+        # Optional pitch shift (default 0 semitones — identity)
+        if abs(pitch_shift_semitones) > 1e-9:
+            f0_t = torch.from_numpy(f0).to(self.device).to(torch.float32)
+            f0_t = _tinyvc_shift_f0(f0_t, pitch_shift_semitones)
+            f0 = f0_t.cpu().numpy()
+
+        content_replaced = self.knn_replace(content, voice_id)
+        out = self.decode(content_replaced, f0, energy)
+        return out
+
+    @staticmethod
+    def _preprocess(wav: np.ndarray, sr: int) -> np.ndarray:
+        """Resample → mono mixdown → peak-normalize to -3 dBFS.
+
+        Returns 24 kHz mono float32 with peak = 10**(-3/20) ≈ 0.7079.
+        """
+        wav = np.asarray(wav, dtype=np.float32)
+        if wav.ndim == 2:
+            wav = wav.mean(axis=1)  # stereo → mono
+        if sr != SAMPLE_RATE:
+            if not _HAS_LIBROSA:
+                raise RuntimeError(
+                    f"Input sr={sr} != {SAMPLE_RATE}; librosa required to "
+                    f"resample. Install librosa or feed 24 kHz audio."
+                )
+            wav = librosa.resample(wav, orig_sr=sr, target_sr=SAMPLE_RATE)
+        # peak normalize to -3 dBFS (matches TinyVC's infer.py convention)
+        peak = float(np.max(np.abs(wav))) + 1e-8
+        wav = wav * (10 ** (DEFAULT_NORM_DB / 20.0) / peak)
+        return wav
+
+    # ------------------------------------------------------------------
     # End-to-end
     # ------------------------------------------------------------------
     def process_audio(
@@ -319,32 +368,64 @@ class V1Infer:
         5. (optional) pitch shift f0 by N semitones
         6. kNN-VC replace -> content_replaced
         7. decode(content_replaced, f0, energy) -> wav
+
+        For long inputs (60s+), prefer :meth:`process_audio_chunked` which
+        processes the input in fixed-length chunks to avoid PyTorch caching
+        large intermediate tensors (60s single-shot ≈ 182 MB RSS growth;
+        5s chunks ≈ <50 MB).
         """
-        wav = np.asarray(wav, dtype=np.float32)
-        if wav.ndim == 2:
-            wav = wav.mean(axis=1)
-        if sr != SAMPLE_RATE:
-            if not _HAS_LIBROSA:
-                raise RuntimeError(
-                    f"Input sr={sr} != {SAMPLE_RATE}; librosa required to "
-                    f"resample. Install librosa or feed 24 kHz audio."
-                )
-            wav = librosa.resample(wav, orig_sr=sr, target_sr=SAMPLE_RATE)
-        # peak normalize to -3 dBFS (matches TinyVC's infer.py convention)
-        peak = float(np.max(np.abs(wav))) + 1e-8
-        wav = wav * (10 ** (DEFAULT_NORM_DB / 20.0) / peak)
+        wav = self._preprocess(wav, sr)
+        return self._run_pipeline(wav, voice_id, pitch_shift_semitones)
 
-        content, f0, energy = self.encode(wav)
+    def process_audio_chunked(
+        self,
+        wav: np.ndarray,
+        sr: int,
+        voice_id: int = 0,
+        chunk_sec: float = 5.0,
+    ) -> np.ndarray:
+        """End-to-end VC with chunked processing for long inputs.
 
-        # Optional pitch shift (default 0 semitones — identity)
-        if abs(pitch_shift_semitones) > 1e-9:
-            f0_t = torch.from_numpy(f0).to(self.device).to(torch.float32)
-            f0_t = _tinyvc_shift_f0(f0_t, pitch_shift_semitones)
-            f0 = f0_t.cpu().numpy()
+        The full wav is preprocessed (resampled + peak-normalized) ONCE so
+        relative loudness is preserved across chunk boundaries, then split
+        into ``chunk_sec``-second pieces. Each chunk is run independently
+        through the encode → kNN replace → decode pipeline, and the outputs
+        are concatenated.
 
-        content_replaced = self.knn_replace(content, voice_id)
-        out = self.decode(content_replaced, f0, energy)
-        return out
+        This avoids PyTorch caching large intermediate tensors for long
+        audio (60s single-shot ≈ 182 MB RSS growth → 5s chunks ≈ <50 MB).
+
+        Parameters
+        ----------
+        wav : np.ndarray
+            Source audio (any sr, mono or stereo, float32).
+        sr : int
+            Source sample rate. Will be resampled to 24 kHz if different.
+        voice_id : int
+            Target voice index (0 .. n_voices-1).
+        chunk_sec : float
+            Chunk length in seconds. Default 5.0 (12 chunks for 60s input).
+
+        Returns
+        -------
+        np.ndarray, float32 — concatenated output (24 kHz mono).
+        """
+        # Preprocess (resample + peak-normalize) ONCE on the full wav so
+        # relative loudness is preserved across chunk boundaries.
+        wav = self._preprocess(wav, sr)
+
+        # Process in chunks to bound PyTorch intermediate tensor size.
+        chunk_size = int(SAMPLE_RATE * chunk_sec)
+        n_chunks = (len(wav) + chunk_size - 1) // chunk_size
+
+        outputs: list[np.ndarray] = []
+        for i in range(n_chunks):
+            start = i * chunk_size
+            end = min((i + 1) * chunk_size, len(wav))
+            chunk = wav[start:end]
+            out = self._run_pipeline(chunk, voice_id)
+            outputs.append(out)
+        return np.concatenate(outputs)
 
     # ------------------------------------------------------------------
     # Hot-swap API (for streaming.py / realtime_infer.py)
