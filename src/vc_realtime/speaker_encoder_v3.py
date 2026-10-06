@@ -42,13 +42,10 @@ Usage (offline registration):
 
 from __future__ import annotations
 
-import os
-from glob import glob
 from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
-
 
 # ---------------------------------------------------------------------------
 # Constants — confirmed in P3-1 from BiCodec/config.yaml + ONNX parity check.

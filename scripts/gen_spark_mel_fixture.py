@@ -82,7 +82,7 @@ def main() -> int:
         audio_t = torchaudio.functional.resample(audio_t, sr, SAMPLE_RATE)
     audio_t = audio_t.unsqueeze(0)  # [1, T_samples]
 
-    print(f"[2/3] Computing log-mel spectrogram (Spark config)")
+    print("[2/3] Computing log-mel spectrogram (Spark config)")
     print(f"      n_fft={N_FFT}, win={WIN_LENGTH}, hop={HOP_LENGTH}, "
           f"n_mels={N_MELS}, f_min={MEL_FMIN}, f_max={MEL_FMAX}, "
           f"power=2.0, log1p")

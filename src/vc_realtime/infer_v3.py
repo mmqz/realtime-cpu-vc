@@ -62,20 +62,16 @@ from vc_realtime.infer_v1 import (  # noqa: E402
     SAMPLE_RATE,  # noqa: E402
     V1Infer,  # noqa: E402
 )
+
 # Re-use the corrected P3-1 constants and FSQ pack/unpack helpers.
 from vc_realtime.speaker_encoder_v3 import (  # noqa: E402
-    BiCodecSpeakerEncoder,  # noqa: E402
-    SPARK_FSQ_BYTES_PACKED,  # noqa: E402
     SPARK_HOP,  # noqa: E402
     SPARK_N_FFT,  # noqa: E402
     SPARK_N_MELS,  # noqa: E402
-    SPARK_OUT_DIM,  # noqa: E402
     SPARK_REF_DURATION_S,  # noqa: E402
     SPARK_SAMPLE_RATE,  # noqa: E402
     pack_fsq_to_48_bytes,  # noqa: E402
-    unpack_fsq_from_48_bytes,  # noqa: E402
-)
-
+    )
 
 DEFAULT_NORM_DB = -3.0  # peak-normalize to -3 dBFS (matches v1 / v2 convention)
 

@@ -17,9 +17,10 @@ Run::
     cd /home/z/my-project/prototype
     python3 -m pytest tests/test_infer_v3.py -v
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 # `conftest.py` at the prototype root prepends `src/` to sys.path so this
 # import works without `pip install -e .`.
