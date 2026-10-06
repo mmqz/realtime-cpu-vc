@@ -1,0 +1,41 @@
+# Default runtime config for the real-time VC prototype
+# Adjust per-platform via CLI overrides: python scripts/realtime_infer.py --config configs/pi5.yaml
+
+# Audio I/O
+audio:
+  sample_rate: 24000        # Hz — matches TinyVC pretrain
+  channels: 1               # mono
+  format: paInt16           # PyAudio format
+  block_size: 1920          # 80 ms chunk at 24 kHz
+  extra_size: 1920          # 80 ms look-ahead (P1 tuned from default 3840)
+  crossfade_size: 960       # 40 ms SOLA crossfade (P1 tuned from default 1920)
+  sola_search_size: 960     # 40 ms SOLA search
+  last_delay_size: 1920     # 80 ms last delay (P1 tuned from default 3840)
+  input_device: -1          # -1 = default mic
+  output_device: -1         # -1 = default speaker
+
+# VAD
+vad:
+  enabled: true
+  aggressiveness: 2         # 0-3, WebRTC VAD aggressiveness
+  silence_gate: true        # skip encoder forward on silence
+
+# ORT sessions
+ort:
+  encoder_model: models/encoder.int8.onnx
+  source_net_model: models/source_net.int8.onnx
+  filter_net_model: models/filter_net.int8.onnx
+  providers: [CPUExecutionProvider]
+  intra_op_num_threads: 2  # x86 sweet spot for small models
+  inter_op_num_threads: 1
+
+# Voice registry
+voices:
+  path: models/voices.safetensors
+  default_voice_id: 0
+  knn_top_k: 4              # kNN-VC top-k cosine retrieval
+
+# Optional high-quality F0 fallback (P2-4)
+pitch:
+  use_rmvpe_fallback: false
+  rmvpe_model: models/rmvpe.onnx

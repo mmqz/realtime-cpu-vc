@@ -1,0 +1,28 @@
+# Python dependencies for the real-time VC prototype
+# CPU-only build of PyTorch; do NOT install CUDA wheels
+torch==2.4.0+cpu
+torchaudio==2.4.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# ONNX + ONNXRuntime (MLAS for x86, XNNPACK needs self-compile for ARM)
+onnx==1.16.1
+onnxruntime==1.18.1
+
+# Audio I/O
+pyaudio==0.2.14
+soundfile==0.12.1
+librosa==0.10.2
+noisereduce==3.0.0
+
+# Voice feature storage
+safetensors==0.4.3
+numpy==1.26.4
+
+# VAD
+webrtcvad==2.0.10
+
+# Config
+pyyaml==6.0.1
+
+# (Optional, P2) RMVPE fallback F0 path
+# pyworld==0.3.4  # uncomment when enabling P2-4
