@@ -348,6 +348,7 @@ impl StreamingPipeline {
         let callback_state = Box::new(AudioCallbackState {
             input_producer: input_prod,
             output_consumer: output_cons,
+            channels: config.channels.max(1) as u32,
         });
         let callback_ptr = Box::into_raw(callback_state);
 
@@ -464,6 +465,9 @@ impl Drop for StreamingPipeline {
 struct AudioCallbackState {
     input_producer: Producer<f32>,
     output_consumer: Consumer<f32>,
+    /// Number of audio channels (1 = mono, 2 = stereo). The callback handles
+    /// interleaved multi-channel audio (frame_count × channels samples).
+    channels: u32,
 }
 
 // SAFETY: `AudioCallbackState` is `Send` because both `Producer<f32>` and
@@ -481,18 +485,20 @@ unsafe impl Send for AudioCallbackState {}
 /// samples if the ring is full (decoder hasn't kept up) and emits silence if
 /// the output ring is empty (decoder hasn't caught up / startup underrun).
 ///
-/// Assumes mono input (channels == 1) so `frame_count` == sample count. With
-/// multi-channel input the math is wrong but the code is still memory-safe
-/// (the buffers are sized for `frame_count * channels` samples, so we'd
-/// under-read / under-write, not overflow).
+/// Supports multi-channel audio (mono or stereo). `frame_count` is the
+/// per-channel frame count, so the total number of f32 samples is
+/// `frame_count * channels`. Audio is pushed/pulled as interleaved samples
+/// (e.g. [L, R, L, R, ...] for stereo) — the decoder thread can use
+/// `deinterleave` / `interleave` (below) if it needs per-channel processing.
 ///
 /// # Safety
 ///
 /// `user_data` must be a valid pointer to an `AudioCallbackState` that
 /// outlives the audio device (i.e., the device must be stopped before the
 /// state is freed — `StreamingPipeline::stop` guarantees this). `output`
-/// must be valid for `frame_count` f32 writes; `input` must be valid for
-/// `frame_count` f32 reads (miniaudio guarantees both for the duplex buffers).
+/// must be valid for `frame_count * channels` f32 writes; `input` must be
+/// valid for `frame_count * channels` f32 reads (miniaudio guarantees both
+/// for the duplex buffers).
 ///
 /// Must not panic — runs on miniaudio's audio thread without unwinding.
 extern "C" fn audio_callback(
@@ -516,10 +522,18 @@ extern "C" fn audio_callback(
     // `&mut` is sound — no aliasing.
     let state = unsafe { &mut *(user_data as *mut AudioCallbackState) };
 
-    let n = frame_count as usize;
+    // `channels` is configured at `start_with_audio` time from `AudioConfig.channels`
+    // (1 = mono, 2 = stereo). Clamp defensively to ≥1 (the AudioConfig builder
+    // already enforces this, but we don't want a divide-by-zero if a future
+    // code path passes 0).
+    let ch = state.channels.max(1) as usize;
+    // `frame_count` is per-channel frames, so total samples = frame_count * ch.
+    let n = frame_count as usize * ch;
 
-    // Push input samples to the input ring (non-blocking, drop if full).
-    // SAFETY: miniaudio guarantees `input` is valid for `frame_count` f32
+    // Push interleaved input samples to the input ring (non-blocking, drop if
+    // full). The samples are stored interleaved (e.g. [L, R, L, R, ...] for
+    // stereo); the decoder thread can `deinterleave` if it needs planar data.
+    // SAFETY: miniaudio guarantees `input` is valid for `frame_count * ch` f32
     // samples (the capture buffer for this callback invocation).
     let input_slice = unsafe { std::slice::from_raw_parts(input, n) };
     for &s in input_slice {
@@ -529,8 +543,10 @@ extern "C" fn audio_callback(
         let _ = state.input_producer.push(s);
     }
 
-    // Pull output samples from the output ring (non-blocking, silence if empty).
-    // SAFETY: miniaudio guarantees `output` is valid for `frame_count` f32
+    // Pull interleaved output samples from the output ring (non-blocking,
+    // silence if empty). The decoder thread should have pushed interleaved
+    // samples (use `interleave` to convert from planar data).
+    // SAFETY: miniaudio guarantees `output` is valid for `frame_count * ch` f32
     // samples (the playback buffer for this callback invocation).
     let output_slice = unsafe { std::slice::from_raw_parts_mut(output, n) };
     for slot in output_slice {
@@ -541,6 +557,63 @@ extern "C" fn audio_callback(
             Err(_) => 0.0,
         };
     }
+}
+
+// ============================================================
+// Multi-channel (de)interleave helpers (OPT-16)
+// ============================================================
+
+/// Deinterleave multi-channel audio.
+///
+/// Input: interleaved samples `[L, R, L, R, ...]` (one f32 per channel per
+/// frame, total `n_frames * channels` samples).
+/// Output: planar samples `[[L, L, ...], [R, R, ...]]` (one `Vec<f32>` per
+/// channel, each of length `n_frames`).
+///
+/// Used by the decoder thread when the audio device is configured for >1
+/// channel (e.g. stereo) but the model / processing expects per-channel
+/// (planar) data. Round-trips with [`interleave`].
+///
+/// # Panics
+///
+/// Panics if `channels == 0`.
+#[allow(dead_code)] // public helpers for future decoder-thread planar↔interleaved conversion
+pub fn deinterleave(input: &[f32], channels: usize) -> Vec<Vec<f32>> {
+    assert!(channels > 0, "channels must be > 0");
+    let n_frames = input.len() / channels;
+    let mut output = vec![vec![0.0f32; n_frames]; channels];
+    for frame in 0..n_frames {
+        for ch in 0..channels {
+            output[ch][frame] = input[frame * channels + ch];
+        }
+    }
+    output
+}
+
+/// Interleave multi-channel audio.
+///
+/// Input: planar samples `[[L, L, ...], [R, R, ...]]` (one slice per channel).
+/// Output: interleaved samples `[L, R, L, R, ...]` (length `n_frames * channels`).
+///
+/// Used by the decoder thread to convert per-channel (planar) model output
+/// back into the interleaved format the miniaudio playback buffer expects.
+/// Round-trips with [`deinterleave`].
+///
+/// # Panics
+///
+/// Panics if `channels == 0` or `input` is empty.
+#[allow(dead_code)] // public helpers for future decoder-thread planar↔interleaved conversion
+pub fn interleave(input: &[Vec<f32>], channels: usize) -> Vec<f32> {
+    assert!(channels > 0, "channels must be > 0");
+    assert!(!input.is_empty(), "input must have at least one channel");
+    let n_frames = input[0].len();
+    let mut output = vec![0.0f32; n_frames * channels];
+    for frame in 0..n_frames {
+        for ch in 0..channels.min(input.len()) {
+            output[frame * channels + ch] = input[ch][frame];
+        }
+    }
+    output
 }
 
 // ============================================================
@@ -696,5 +769,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `deinterleave` with 3 frames × 2 channels: input is interleaved
+    /// `[L, R, L, R, L, R]`, output must be `[[L, L, L], [R, R, R]]`.
+    #[test]
+    fn test_deinterleave_stereo() {
+        let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // 3 frames × 2 channels
+        let output = deinterleave(&input, 2);
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], vec![1.0, 3.0, 5.0]); // Left channel
+        assert_eq!(output[1], vec![2.0, 4.0, 6.0]); // Right channel
+    }
+
+    /// `interleave` with 2 channels: input is planar
+    /// `[[L, L, L], [R, R, R]]`, output must be `[L, R, L, R, L, R]`.
+    #[test]
+    fn test_interleave_stereo() {
+        let input = vec![vec![1.0, 3.0, 5.0], vec![2.0, 4.0, 6.0]]; // 2 channels
+        let output = interleave(&input, 2);
+        assert_eq!(output, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    /// `deinterleave` ↔ `interleave` round-trip: any interleaved input must
+    /// survive deinterleave → interleave unchanged.
+    #[test]
+    fn test_deinterleave_interleave_roundtrip() {
+        let original = vec![0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]; // 4 frames × 2 ch
+        let planar = deinterleave(&original, 2);
+        let back = interleave(&planar, 2);
+        assert_eq!(original, back);
+    }
+
+    /// `deinterleave` with 1 channel must be a no-op copy (mono case).
+    #[test]
+    fn test_deinterleave_mono() {
+        let input = vec![1.0f32, 2.0, 3.0];
+        let output = deinterleave(&input, 1);
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0], input);
     }
 }
