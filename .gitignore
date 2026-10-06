@@ -56,9 +56,19 @@ data/test/*.wav
 # Vendored C/C++ dependencies — downloaded by scripts/vendor_c_deps.sh in the
 # P1 v2.0 task; do NOT commit vendored upstream source trees.
 # ----------------------------------------------------------------------------
-src_c/miniaudio/
-src_c/ggml/
-src_c/libonnxruntime/
+# Use `src_c/miniaudio/*` (not `src_c/miniaudio/`) so the per-file negation
+# below for miniaudio_shim.c works. With directory-level ignores, git won't
+# even descend into the directory, so per-file `!` rules are silently dead.
+src_c/miniaudio/*
+src_c/ggml/*
+src_c/libonnxruntime/*
+
+# miniaudio_shim.c is OUR code (a thin C wrapper around miniaudio's complex
+# ma_device_config / ma_device structs that hides the complexity behind 4
+# simple extern "C" functions with opaque void* handles). It is NOT vendored
+# upstream code, so we commit it to the repo — vendor_c_deps.sh fetches only
+# the upstream miniaudio.h + miniaudio.c stub.
+!src_c/miniaudio/miniaudio_shim.c
 
 # ----------------------------------------------------------------------------
 # Editor / OS / logs
