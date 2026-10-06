@@ -342,6 +342,103 @@ impl Default for AudioConfig {
 }
 
 // ============================================================
+// 5. F0 logits → Hz decoding (TinyVC PitchEstimator.decode)
+// ============================================================
+// Replaces: repos/tinyvc/module/tinyvc/encoder.py:PitchEstimator.decode
+// Input:  f0_logits [B, 512, T] (flattened, row-major)
+// Output: f0 in Hz   [B, T]
+//
+// Matches Python's `decode(logits, k=4)`:
+//   probs, indices = torch.topk(logits, k, dim=1)       # top-k along bin axis
+//   probs = F.softmax(probs, dim=1)                      # softmax over the k topk only
+//   freqs = self.id2freq(indices)                         # fmin * 2^(idx / cpo), 0 if <= fmin
+//   f0 = (probs * freqs).sum(dim=1)                       # weighted average
+//   f0[f0 <= self.min_frequency] = 0                      # silence floor
+//
+// Defaults from `PitchEstimator.__init__`:
+//   num_classes = 512, classes_per_octave = 48, min_frequency = 20.0, k = 4.
+
+/// Convert f0 logits `[B, n_bins, T]` to F0 in Hz `[B, T]` via top-k softmax
+/// weighted average, matching TinyVC's `PitchEstimator.decode`.
+///
+/// Parameters:
+/// - `f0_logits`: `&[f32]` shape `[batch, n_bins, time]` (flattened, row-major).
+/// - `batch`: B.
+/// - `n_bins`: 512 (`PitchEstimator.num_classes`).
+/// - `time`: T.
+/// - `bins_per_octave`: 48 (`PitchEstimator.classes_per_octave`).
+/// - `fmin`: 20.0 (`PitchEstimator.min_frequency`, Hz).
+/// - `top_k`: 4 (`PitchEstimator.decode` default k).
+///
+/// Returns `Vec<f32>` shape `[batch, time]` with F0 in Hz; frames whose decoded
+/// F0 is `<= fmin` are set to 0 (matches `f0[f0 <= min_frequency] = 0`).
+pub fn decode_f0_logits(
+    f0_logits: &[f32],
+    batch: usize,
+    n_bins: usize,
+    time: usize,
+    bins_per_octave: usize,
+    fmin: f32,
+    top_k: usize,
+) -> Vec<f32> {
+    // Precompute bin → frequency mapping (matches PitchEstimator.id2freq):
+    //   freq(i) = fmin * 2^(i / cpo);  freq = 0 if freq <= fmin (bin 0).
+    let bin_to_freq: Vec<f32> = (0..n_bins)
+        .map(|i| {
+            let f = fmin * 2.0_f32.powf(i as f32 / bins_per_octave as f32);
+            if f <= fmin { 0.0 } else { f }
+        })
+        .collect();
+
+    let mut output = vec![0.0f32; batch * time];
+
+    for b in 0..batch {
+        for t in 0..time {
+            // Logits for this (batch, time) frame: shape [n_bins].
+            let base = b * n_bins * time + t * n_bins;
+            let logits = &f0_logits[base..base + n_bins];
+
+            // top-k indices via repeated maximum scan (k=4 → O(k·n) = 2048 ops).
+            // For larger k, a partial-sort would be better, but k=4 is small and
+            // the simple scan keeps this dependency-free.
+            let mut top_indices: Vec<usize> = Vec::with_capacity(top_k);
+            let mut top_logits: Vec<f32> = Vec::with_capacity(top_k);
+            for _ in 0..top_k {
+                let mut best_idx = 0usize;
+                let mut best_logit = f32::NEG_INFINITY;
+                for (i, &l) in logits.iter().enumerate() {
+                    if !top_indices.contains(&i) && l > best_logit {
+                        best_logit = l;
+                        best_idx = i;
+                    }
+                }
+                top_indices.push(best_idx);
+                top_logits.push(best_logit);
+            }
+
+            // Numerically stable softmax over the k topk logits only (matches
+            // `F.softmax(probs, dim=1)` where `probs` is the [B, k, T] topk tensor).
+            let max_logit = top_logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = top_logits.iter().map(|&x| (x - max_logit).exp()).collect();
+            let sum_exp: f32 = exps.iter().sum();
+            let probs: Vec<f32> = exps.iter().map(|&e| e / sum_exp).collect();
+
+            // Weighted average: sum(prob_i * freq_i) (matches `(probs*freqs).sum(dim=1)`).
+            let weighted_sum: f32 = top_indices
+                .iter()
+                .zip(probs.iter())
+                .map(|(&idx, &p)| p * bin_to_freq[idx])
+                .sum();
+
+            // Silence floor: f0[f0 <= fmin] = 0.
+            output[b * time + t] = if weighted_sum > fmin { weighted_sum } else { 0.0 };
+        }
+    }
+
+    output
+}
+
+// ============================================================
 // Tests
 // ============================================================
 
@@ -649,5 +746,97 @@ mod tests {
             per_call_ms < 1.0,
             "synth_harmonics took {per_call_ms}ms/call — expected <1ms with SIMD sin"
         );
+    }
+
+    // ============================================================
+    // decode_f0_logits tests
+    // ============================================================
+
+    #[test]
+    fn test_decode_f0_logits_basic() {
+        // Bin 96 → freq = 20 * 2^(96/48) = 20 * 2^2 = 80 Hz.
+        // A single dominant logit at bin 96 should yield F0 ≈ 80 Hz.
+        let n_bins = 512;
+        let time = 10;
+        let mut logits = vec![0.0f32; n_bins * time];
+        for t in 0..time {
+            logits[96 + t * n_bins] = 10.0;
+        }
+        let f0 = decode_f0_logits(&logits, 1, n_bins, time, 48, 20.0, 4);
+        assert_eq!(f0.len(), time);
+        for t in 0..time {
+            assert!(
+                (f0[t] - 80.0).abs() < 5.0,
+                "f0[{}]={}, expected ~80 Hz",
+                t,
+                f0[t]
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_f0_logits_interpolation() {
+        // Two adjacent bins with equal high logits → F0 should land between them.
+        //   bin 48 → 20 * 2^(48/48) = 40 Hz
+        //   bin 49 → 20 * 2^(49/48) ≈ 40.58 Hz
+        let n_bins = 512;
+        let time = 1;
+        let mut logits = vec![0.0f32; n_bins];
+        logits[48] = 5.0;
+        logits[49] = 5.0;
+        let f0 = decode_f0_logits(&logits, 1, n_bins, time, 48, 20.0, 4);
+        assert!(
+            f0[0] > 39.0 && f0[0] < 41.0,
+            "f0={}, expected ~40.3 Hz (interpolation between bins 48 and 49)",
+            f0[0]
+        );
+    }
+
+    #[test]
+    fn test_decode_f0_logits_silence_floor() {
+        // When the weighted F0 ≤ fmin, Python sets it to 0 (`f0[f0 <= min_frequency] = 0`).
+        // Force top-k to be dominated by bin 0 (whose freq = 0 by id2freq), so the
+        // weighted average collapses to 0 → silence floor → output 0.
+        let n_bins = 512;
+        let time = 1;
+        let mut logits = vec![f32::NEG_INFINITY; n_bins];
+        logits[0] = 100.0;
+        logits[1] = -100.0;
+        logits[2] = -100.0;
+        logits[3] = -100.0;
+        let f0 = decode_f0_logits(&logits, 1, n_bins, time, 48, 20.0, 4);
+        assert_eq!(f0[0], 0.0, "silence floor should produce 0 Hz, got {}", f0[0]);
+    }
+
+    #[test]
+    fn test_decode_f0_logits_batch_and_time() {
+        // B=2, T=3: each (b,t) frame has a distinct dominant bin → distinct F0.
+        //   bin 96  → 80 Hz
+        //   bin 144 → 20 * 2^(144/48) = 20 * 2^3 = 160 Hz
+        //   bin 192 → 20 * 2^(192/48) = 20 * 2^4 = 320 Hz
+        let n_bins = 512;
+        let batch = 2;
+        let time = 3;
+        let mut logits = vec![0.0f32; batch * n_bins * time];
+        let targets = [96usize, 144, 192];
+        for b in 0..batch {
+            for t in 0..time {
+                let base = b * n_bins * time + t * n_bins;
+                logits[base + targets[t]] = 10.0;
+            }
+        }
+        let f0 = decode_f0_logits(&logits, batch, n_bins, time, 48, 20.0, 4);
+        assert_eq!(f0.len(), batch * time);
+        let expected = [80.0f32, 160.0, 320.0];
+        for b in 0..batch {
+            for t in 0..time {
+                let got = f0[b * time + t];
+                assert!(
+                    (got - expected[t]).abs() < 5.0,
+                    "b={b} t={t}: f0={got}, expected ~{}",
+                    expected[t]
+                );
+            }
+        }
     }
 }
