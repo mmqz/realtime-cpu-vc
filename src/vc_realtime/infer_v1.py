@@ -214,6 +214,25 @@ class V1Infer:
         )
         self.n_voices = len(self._voice_keys)
 
+        # Warm up ONNX/PyTorch sessions with 1s of silence per voice. This
+        # forces the JIT/autotune paths in torch's conv/matmul kernels to
+        # settle before the first "real" inference call (avoids the ~100ms
+        # first-call latency penalty on cold-start benchmarks / realtime).
+        self._warmup()
+
+    # ------------------------------------------------------------------
+    # Warmup — run 1s of silence per voice to prime PyTorch kernels
+    # ------------------------------------------------------------------
+    def _warmup(self) -> None:
+        """Warm up ONNX/PyTorch sessions with 1s of silence per voice."""
+        sr = SAMPLE_RATE
+        silence = np.zeros(sr, dtype=np.float32)
+        for vid in range(min(5, self.n_voices)):
+            try:
+                _ = self.process_audio(silence, sr, voice_id=vid)
+            except Exception as e:  # noqa: BLE001 — best-effort warmup
+                print(f"[warmup] voice {vid} failed: {e}")
+
     # ------------------------------------------------------------------
     # Stage 1: encode source wav -> (content, f0, energy)
     # ------------------------------------------------------------------
