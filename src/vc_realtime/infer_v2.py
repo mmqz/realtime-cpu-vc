@@ -180,7 +180,7 @@ class V2Infer(V1Infer):
         # voices_v2.safetensors (created by register_voice or by the
         # bulk-registration loop in tests). Empty dict if the file does not
         # exist (e.g., first run before any voice has been registered).
-        self.ov_embeddings: dict[int, np.ndarray] = self._load_openvoice_embeddings(models_dir)
+        self.ov_embeddings: dict[int, np.ndarray[Any, np.dtype[Any]]] = self._load_openvoice_embeddings(models_dir)
 
     # ------------------------------------------------------------------
     # OpenVoice RefEncoder ONNX session management
@@ -214,7 +214,7 @@ class V2Infer(V1Infer):
         )
 
     @classmethod
-    def _load_openvoice_embeddings(cls, models_dir: Path) -> dict[int, np.ndarray]:
+    def _load_openvoice_embeddings(cls, models_dir: Path) -> dict[int, np.ndarray[Any, np.dtype[Any]]]:
         """Load pre-computed OpenVoice 256-d speaker embeddings.
 
         File format: safetensors with one tensor per voice, key "voice_<id>"
@@ -232,7 +232,7 @@ class V2Infer(V1Infer):
                 "safetensors is required to load voices_v2.safetensors; "
                 "install with `pip install safetensors`."
             ) from e
-        out: dict[int, np.ndarray] = {}
+        out: dict[int, np.ndarray[Any, np.dtype[Any]]] = {}
         for key, tensor in load_file(str(path)).items():
             # key format: "voice_<id>"
             try:
@@ -257,7 +257,7 @@ class V2Infer(V1Infer):
     # ------------------------------------------------------------------
     @staticmethod
     def compute_openvoice_linear_spec(
-        wav_22k: np.ndarray,
+        wav_22k: np.ndarray[Any, np.dtype[Any]],
         n_fft: int = OPENVOICE_N_FFT,
         hop: int = OPENVOICE_HOP,
         win: int = OPENVOICE_WIN,
@@ -269,11 +269,11 @@ class V2Infer(V1Infer):
 
         Parameters
         ----------
-        wav_22k : np.ndarray [L] at 22.05 kHz, float32 in [-1, 1] (or any peak)
+        wav_22k : np.ndarray[Any, np.dtype[Any]] [L] at 22.05 kHz, float32 in [-1, 1] (or any peak)
 
         Returns
         -------
-        np.ndarray [1, T, 513] float32 — ready to feed to the ONNX session.
+        np.ndarray[Any, np.dtype[Any]] [1, T, 513] float32 — ready to feed to the ONNX session.
         """
         if not _HAS_LIBROSA:
             raise RuntimeError(
@@ -286,18 +286,18 @@ class V2Infer(V1Infer):
         # ONNX expects time-first: [B, T, 513]
         return mag.T[None, ...]
 
-    def encode_openvoice_embedding(self, wav_22k: np.ndarray) -> np.ndarray[Any, np.dtype[Any]]:
+    def encode_openvoice_embedding(self, wav_22k: np.ndarray[Any, np.dtype[Any]]) -> np.ndarray[Any, np.dtype[Any]]:
         """Run the OpenVoice ReferenceEncoder ONNX on a 22.05 kHz wav.
 
         Used OFFLINE during voice registration (not at runtime).
 
         Parameters
         ----------
-        wav_22k : np.ndarray [L_samples] float32 at 22.05 kHz.
+        wav_22k : np.ndarray[Any, np.dtype[Any]] [L_samples] float32 at 22.05 kHz.
 
         Returns
         -------
-        np.ndarray [256] float32 — the 256-d speaker embedding.
+        np.ndarray[Any, np.dtype[Any]] [256] float32 — the 256-d speaker embedding.
         """
         if self._ref_encoder is None:
             raise RuntimeError(
@@ -339,7 +339,7 @@ class V2Infer(V1Infer):
 
         Returns
         -------
-        np.ndarray [256] float32 — the embedding (also cached in self.ov_embeddings).
+        np.ndarray[Any, np.dtype[Any]] [256] float32 — the embedding (also cached in self.ov_embeddings).
         """
         if not _HAS_LIBROSA:
             raise RuntimeError("librosa required for register_voice (resampling).")
@@ -392,7 +392,7 @@ class V2Infer(V1Infer):
             return
         save_file(tensors, str(out_path))
 
-    def get_openvoice_embedding(self, voice_id: int) -> np.ndarray | None:
+    def get_openvoice_embedding(self, voice_id: int) -> np.ndarray[Any, np.dtype[Any]] | None:
         """Lookup the OpenVoice 256-d embedding for `voice_id`, or None.
 
         This is a runtime convenience accessor; v2 does NOT actually use the
@@ -409,7 +409,7 @@ class V2Infer(V1Infer):
 _default_infer: V2Infer | None = None
 
 
-def process_audio(wav: np.ndarray, sr: int, voice_id: int = 0) -> np.ndarray[Any, np.dtype[Any]]:
+def process_audio(wav: np.ndarray[Any, np.dtype[Any]], sr: int, voice_id: int = 0) -> np.ndarray[Any, np.dtype[Any]]:
     """Module-level shortcut using a cached singleton V2Infer.
 
     Used by `scripts/benchmark.py` and `scripts/realtime_infer.py` so they
