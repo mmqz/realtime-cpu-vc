@@ -82,7 +82,7 @@ class StreamingInfer:
         import pyaudio  # lazy: this callback only fires while streams are active
 
         # Decode int16 -> float32 [-1, 1]
-        chunk = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
+        chunk = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32767.0
 
         # VAD silence gate (skip if silent)
         if self.vad is not None and self._is_silence(in_data):
@@ -109,7 +109,7 @@ class StreamingInfer:
         out_chunk = self._sola_crossfade(waveform.squeeze())
 
         # Convert back to int16
-        out_int16 = (out_chunk * 32768.0).clip(-32768, 32767).astype(np.int16)
+        out_int16 = (out_chunk * 32767.0).clip(-32768, 32767).astype(np.int16)
         import pyaudio  # noqa: F811  — same lazy import as at top of callback
 
         return (out_int16.tobytes(), pyaudio.paContinue)
