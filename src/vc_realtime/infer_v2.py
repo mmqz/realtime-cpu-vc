@@ -62,13 +62,12 @@ Benchmarking::
         --source data/source/source_001.wav --voice-id 0 \
         --ref data/voices/voice_0.wav
 """
-from typing import Any
-
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import soundfile as sf

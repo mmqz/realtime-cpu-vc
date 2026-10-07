@@ -65,15 +65,21 @@ class KNNRetrieval:
         # Compute via einsum: [T, T_ref]
         sim = torch.einsum("ct,cr->tr", src_norm, target)  # [T, T_ref]
 
-        # Top-k weighted average: 1/score^2 weighting (kNN-VC standard)
+        # Top-k SIMPLE AVERAGE of the most-similar target frames.
+        # Matches the upstream TinyVC `module/tinyvc/feature_retrieval.py:30`
+        # which uses `torch.stack(...).mean(dim=2)` — a simple average, NOT
+        # a similarity-weighted average. The Rust port (vc-native::knn_retrieve)
+        # also uses simple average to ensure bit-equivalent v1↔v2 output.
+        # NOTE: the previous `1/sim^2` weighting was a bug — it gave MORE
+        # weight to LESS similar frames (sim=0.1 → weight=100 vs sim=1.0 →
+        # weight=1), inverting the intended kNN-VC behavior.
         topk_vals, topk_idx = torch.topk(sim, k=self.top_k, dim=-1)  # [T, k]
-        weights = 1.0 / (topk_vals**2 + 1e-8)  # [T, k]
-        weights = weights / weights.sum(dim=-1, keepdim=True)
+        _ = topk_vals  # unused — simple average; kept for debug introspection
         # Gather target features for top-k indices
-        # target[topk_idx] shape: [T, k, 768]
+        # target_expanded[topk_idx] shape: [T, k, 768]
         target_expanded = target.t()  # [T_ref, 768]
         selected = target_expanded[topk_idx]  # [T, k, 768]
-        # Weighted average
-        out = (selected * weights.unsqueeze(-1)).sum(dim=1)  # [T, 768]
+        # Simple average across the top-k axis
+        out = selected.mean(dim=1)  # [T, 768]
         out = out.t().unsqueeze(0)  # [1, 768, T]
         return out.numpy().astype(np.float32)
