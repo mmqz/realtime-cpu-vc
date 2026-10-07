@@ -1,0 +1,67 @@
+{
+  "source": "data/source/source_001.wav",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.4346093237400055,
+      "source_sim": 0.18509329855442047,
+      "vc_effect": 0.24951602518558502,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 168.72821044921875,
+      "decode_time_ms": 296.68601799994576
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.42683282494544983,
+      "source_sim": 0.27800923585891724,
+      "vc_effect": 0.1488235890865326,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 115.2447280883789,
+      "decode_time_ms": 221.72031100012646
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.39536210894584656,
+      "source_sim": 0.26337119936943054,
+      "vc_effect": 0.13199090957641602,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 116.73768615722656,
+      "decode_time_ms": 232.40831799989792
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": 0.14482064545154572,
+      "source_sim": 0.13965484499931335,
+      "vc_effect": 0.005165800452232361,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 204.42958068847656,
+      "decode_time_ms": 237.63772200004496
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.17824606597423553,
+      "source_sim": 0.053705357015132904,
+      "vc_effect": 0.12454070895910263,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 181.88600158691406,
+      "decode_time_ms": 239.88233299996864
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.3159741938114166,
+    "mean_source_sim": 0.1839667871594429,
+    "mean_vc_effect": 0.13200740665197372,
+    "delta_vs_m05": 0.13100740665197372,
+    "cross_gender_mean_vc_effect": 0.0648532547056675,
+    "cross_gender_m05_baseline": -0.114
+  },
+  "baseline_comparison": {
+    "m05_v1_baseline_mean_vc_effect": 0.001,
+    "m05_v1_baseline_cross_gender_mean": -0.114
+  }
+}
