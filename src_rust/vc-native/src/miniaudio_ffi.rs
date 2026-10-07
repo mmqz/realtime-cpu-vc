@@ -64,6 +64,25 @@ type MaDataCallback = unsafe extern "C" fn(
 );
 
 // ============================================================
+// Boxed user-callback storage (held by `AudioDevice`, freed in `Drop`)
+// ============================================================
+
+/// Boxed user callback + the channel count the device was opened with.
+///
+/// Stored as the opaque `user_data` pointer handed to the C shim. The
+/// `channels` field lets the trampoline compute the correct slice length:
+/// miniaudio passes `frame_count` *frames* (not samples), so the actual
+/// f32 count in each buffer is `frame_count * channels`. Slicing only
+/// `frame_count` samples (the previous bug) silently dropped half the
+/// buffer for stereo audio — see commit message for the deep-audit fix.
+///
+/// Not public — only [`AudioDevice::open`] / `trampoline` / `Drop` touch it.
+struct CallbackData {
+    callback: Box<dyn FnMut(&[f32], &mut [f32]) + Send>,
+    channels: u32,
+}
+
+// ============================================================
 // FFI function declarations (link against libminiaudio.a — see build.rs)
 // ============================================================
 
@@ -171,13 +190,17 @@ impl AudioDevice {
     where
         F: FnMut(&[f32], &mut [f32]) + Send + 'static,
     {
-        // Box the closure inside a `Box<Box<dyn ...>>` so we can erase the
-        // concrete `F` and hand the C shim a single `*mut c_void`. The
-        // outer box is what we keep a raw pointer to; `Drop` reclaims it via
-        // `Box::from_raw`.
-        let boxed: Box<Box<dyn FnMut(&[f32], &mut [f32]) + Send>> =
-            Box::new(Box::new(callback));
-        let user_data = Box::into_raw(boxed) as *mut c_void;
+        // Box the closure + the channel count inside a `CallbackData`
+        // so the C trampoline can recover both via the single `*mut c_void`
+        // user_data pointer miniaudio accepts. The `channels` field is
+        // required because miniaudio passes `frame_count` *frames* (not
+        // samples) to the trampoline — the actual f32 count in each buffer
+        // is `frame_count * channels` (see `trampoline` below).
+        let cb_data: Box<CallbackData> = Box::new(CallbackData {
+            callback: Box::new(callback),
+            channels: config.channels as u32,
+        });
+        let user_data = Box::into_raw(cb_data) as *mut c_void;
 
         // C trampoline: the FFI signature is `unsafe extern "C" fn`, but the
         // closure-based path means *users* never write `unsafe` — only this
@@ -196,10 +219,18 @@ impl AudioDevice {
             // and remains valid until `AudioDevice::drop` reclaims it. The
             // audio device has already been stopped before `Drop` runs the
             // reclaim, so the trampoline cannot fire concurrently.
-            let callback = unsafe {
-                &mut *(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>)
+            let cb_data = unsafe {
+                &mut *(user_data as *mut CallbackData)
             };
-            let n = frame_count as usize;
+            // miniaudio passes `frame_count` *frames* (one frame per
+            // channel-pair), so the f32 count in each buffer is
+            // `frame_count * channels`. Slicing only `frame_count` samples
+            // (the previous behavior) silently dropped the second half of
+            // each buffer for stereo audio — a HIGH-severity data-corruption
+            // bug. `checked_mul` guards against adversarial overflow.
+            let n = (frame_count as usize)
+                .checked_mul(cb_data.channels as usize)
+                .unwrap_or(0);
             let input_slice = if input.is_null() || n == 0 {
                 &[][..]
             } else {
@@ -214,7 +245,7 @@ impl AudioDevice {
                 // `frame_count * channels` f32 writes for this callback.
                 unsafe { std::slice::from_raw_parts_mut(output, n) }
             };
-            callback(input_slice, output_slice);
+            (cb_data.callback)(input_slice, output_slice);
         }
 
         let mut handle: *mut c_void = std::ptr::null_mut();
@@ -236,7 +267,7 @@ impl AudioDevice {
             // device was never started), so `user_data` is still owned
             // solely by this thread. Reclaim the box to avoid a leak.
             unsafe {
-                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+                drop(Box::from_raw(user_data as *mut CallbackData));
             }
             return Err(format!(
                 "shim_open_duplex failed with miniaudio error code {} (e.g. -204 MA_NO_DEVICE, -203 MA_NO_BACKEND, -400 MA_FAILED_TO_INIT_BACKEND)",
@@ -247,7 +278,7 @@ impl AudioDevice {
             // Should not happen — shim returns non-zero on failure. Defensive.
             // SAFETY: as above — device never started, sole ownership.
             unsafe {
-                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+                drop(Box::from_raw(user_data as *mut CallbackData));
             }
             return Err("shim_open_duplex returned success but handle is NULL".into());
         }
@@ -327,7 +358,7 @@ impl Drop for AudioDevice {
             // and the device has just been closed above, so the trampoline
             // cannot be running concurrently.
             unsafe {
-                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+                drop(Box::from_raw(user_data as *mut CallbackData));
             }
         }
     }
@@ -361,6 +392,19 @@ mod tests {
             *mut c_void,
             *mut *mut c_void,
         ) -> c_int>();
+    }
+
+    /// Verify the `CallbackData` struct stores both the channel count and
+    /// the boxed closure (regression test for the deep-audit fix that made
+    /// the trampoline slice `frame_count * channels` samples instead of
+    /// `frame_count`).
+    #[test]
+    fn test_callback_data_stores_channels() {
+        let cb_data = CallbackData {
+            callback: Box::new(|_input: &[f32], _output: &mut [f32]| {}),
+            channels: 2,
+        };
+        assert_eq!(cb_data.channels, 2);
     }
 
     /// In a headless environment (no audio hardware / no PulseAudio daemon),

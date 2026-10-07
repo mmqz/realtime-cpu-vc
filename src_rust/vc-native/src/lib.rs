@@ -64,12 +64,22 @@ pub fn sola_find_best_offset(
     sola_search_size: usize,
 ) -> usize {
     let crossfade_size = new_chunk.len();
-    if tail.len() < crossfade_size + sola_search_size || crossfade_size == 0 {
+    // Guard against degenerate input + integer overflow on adversarial
+    // `crossfade_size + sola_search_size` (could wrap to a small value,
+    // bypass the `tail.len() < ...` check, and let the inner loop index
+    // `tail[offset..offset + crossfade_size]` out of bounds).
+    // `saturating_add` makes the overflow case fall through to the early
+    // return (treating it as `tail.len() < required`).
+    let required = crossfade_size.saturating_add(sola_search_size);
+    if crossfade_size == 0 || sola_search_size == 0 || tail.len() < required {
         return 0;
     }
     let mut best_offset = 0usize;
     let mut best_corr = f32::NEG_INFINITY;
     for offset in 0..sola_search_size {
+        // SAFETY (bounds): `offset < sola_search_size` and
+        // `tail.len() >= crossfade_size + sola_search_size` ⇒
+        // `offset + crossfade_size <= tail.len()`. No OOB.
         let corr = dot_product_simd(new_chunk, &tail[offset..offset + crossfade_size]);
         if corr > best_corr {
             best_corr = corr;
@@ -261,7 +271,7 @@ fn fast_sin(x: f32) -> f32 {
     //   - q mod 4 ∈ {2, 3} → bit 1 of q = 1 → sign bit set
     // Combined with x's own sign bit: result is negative iff (q mod 4 ∈ {2, 3})
     // XOR (x < 0), which is the correct sign for sin in each quadrant.
-    let q_sign_bit = (((q as u32) & 2) << 30); // bit 1 of q → bit 31
+    let q_sign_bit = ((q as u32) & 2) << 30; // bit 1 of q → bit 31
     let x_sign_bit = x.to_bits() & 0x8000_0000;
     let result_bits = sin1.to_bits() ^ q_sign_bit ^ x_sign_bit;
     f32::from_bits(result_bits)
@@ -284,7 +294,22 @@ pub fn synth_harmonics(
     n_harmonics: usize,
     sr: u32,
 ) -> Vec<f32> {
+    assert!(sr > 0, "sr must be > 0 (got {sr}) — div-by-zero in phase_step");
     let t = f0_upsampled.len();
+    // Amplitudes is laid out as `[n_harmonics + 1, T]` row-major (DC row +
+    // one row per harmonic). Without this assert, the inner slice
+    // `amplitudes[k * t .. (k + 1) * t]` would panic with index-out-of-
+    // bounds inside the harmonic loop, which is hard to debug from a
+    // downstream stack trace.
+    let amp_total = (n_harmonics.checked_add(1))
+        .and_then(|p| p.checked_mul(t))
+        .unwrap_or(0);
+    assert_eq!(
+        amplitudes.len(),
+        amp_total,
+        "amplitudes.len() ({}) must equal (n_harmonics + 1) * T = ({n_harmonics} + 1) * {t} = {amp_total}",
+        amplitudes.len(),
+    );
     let mut output = vec![0.0f32; t];
 
     // 1. Compute phase via cumulative sum: phase[i] = phase[i-1] + 2π·f0[i]/sr.
@@ -443,6 +468,31 @@ pub fn decode_f0_logits(
     fmin: f32,
     top_k: usize,
 ) -> Vec<f32> {
+    // Defensive length check. Without this, the slice `&f0_logits[base..base
+    // + n_bins]` would panic deep in the inner loop on a length mismatch,
+    // making downstream debugging harder than a clear assert at entry.
+    // The contract is `[batch, n_bins, time]` row-major ⇒ exactly
+    // `batch * n_bins * time` f32 elements.
+    let expected = batch.checked_mul(n_bins)
+        .and_then(|p| p.checked_mul(time));
+    assert_eq!(
+        f0_logits.len(),
+        expected.unwrap_or(0),
+        "f0_logits.len() ({}) must equal batch*n_bins*time = {}*{}*{} = {}",
+        f0_logits.len(),
+        batch,
+        n_bins,
+        time,
+        expected.unwrap_or(0),
+    );
+
+    // Degenerate: no bins to score over → output zeros of shape [batch, time].
+    // (Without this guard, `bin_to_freq[0]` would panic below when the
+    // top-k scan picks the default `best_idx = 0` on an empty logits slice.)
+    if n_bins == 0 || top_k == 0 {
+        return vec![0.0f32; batch * time];
+    }
+
     // Precompute bin → frequency mapping (matches PitchEstimator.id2freq):
     //   freq(i) = fmin * 2^(i / cpo);  freq = 0 if freq <= fmin (bin 0).
     let bin_to_freq: Vec<f32> = (0..n_bins)
@@ -599,8 +649,19 @@ pub fn knn_retrieve_with_alpha(
         // No target frames to match against → identity (alpha = 1.0 effectively).
         return source.to_vec();
     }
+    if top_k == 0 {
+        // top_k=0 ⇒ no targets contribute to the mean. The previous path
+        // computed `effective_k = 0` and called `select_nth_unstable_by(
+        // usize::MAX, ...)` which panics with index-out-of-bounds. Treat
+        // top_k=0 as the identity case (matches Python `torch.topk(k=0)`
+        // returning an empty selection, then `.mean(dim=2)` = 0 ⇒ output 0
+        // would also be defensible; we pick identity so the call is a no-op
+        // for the caller's source features, which is the safest behavior).
+        return source.to_vec();
+    }
 
     let effective_k = top_k.min(t_ref);
+    debug_assert!(effective_k >= 1, "effective_k >= 1 (top_k > 0 && t_ref > 0)");
     let one_minus_alpha = 1.0 - alpha;
     let inv_k = 1.0 / effective_k as f32;
 
@@ -648,11 +709,17 @@ pub fn knn_retrieve_with_alpha(
         // (Rust 1.62+) — branchless (just an integer compare on the bit
         // representations) and handles NaN correctly (no `.unwrap_or` panic
         // guard). Typically ~2× faster per comparison.
-        let k = effective_k; // >= 1 since t_ref >= 1 (early-return above).
+        //
+        // `effective_k >= 1` is guaranteed by the early-return above (we
+        // exit when `top_k == 0`); so `k - 1` cannot underflow.
+        let k = effective_k;
+        debug_assert!(k >= 1, "effective_k >= 1 (top_k > 0 && t_ref > 0 early-return above)");
         let partition_cmp = |a: &(usize, f32), b: &(usize, f32)| {
             b.1.total_cmp(&a.1).then(a.0.cmp(&b.0))
         };
         // Partition: top-k sims end up at sims[0..k] (unordered).
+        // SAFETY: `k - 1 < t_ref <= sims.len()` since `k = effective_k =
+        // top_k.min(t_ref) <= t_ref = sims.len()`. So `k - 1 < sims.len()`.
         sims.select_nth_unstable_by(k - 1, partition_cmp);
         // Sort just the top-k slice — k=4 typically.
         sims[0..k].sort_by(partition_cmp);
@@ -1327,6 +1394,100 @@ mod tests {
         assert!((out[1] - 0.5).abs() < 1e-5, "out[1]={}, expected 0.5", out[1]);
         assert!(out[2].abs() < 1e-5, "out[2]={}, expected 0", out[2]);
         assert!(out[3].abs() < 1e-5, "out[3]={}, expected 0", out[3]);
+    }
+
+    // ============================================================
+    // DEEP-RUST audit regression tests (defensive bounds + edge cases)
+    // ============================================================
+
+    /// Regression: `knn_retrieve` with `top_k=0` previously panicked because
+    /// `effective_k = 0` ⇒ `select_nth_unstable_by(0usize - 1 = usize::MAX,
+    /// ...)` raised "index out of bounds in slice". The fix early-returns
+    /// the source unchanged (treating the call as identity, matching
+    /// `torch.topk(k=0)` returning an empty selection → mean-of-empty = 0
+    /// would be the alternative; identity is the safer no-op).
+    #[test]
+    fn test_knn_retrieve_topk_zero_returns_source() {
+        let dim = 8;
+        let t_src = 2;
+        let t_ref = 4;
+        let source: Vec<f32> = (0..dim * t_src).map(|i| i as f32).collect();
+        let target: Vec<f32> = (0..dim * t_ref).map(|i| i as f32).collect();
+        let out = knn_retrieve(&source, &target, dim, t_src, t_ref, 0);
+        assert_eq!(out.len(), source.len());
+        for i in 0..source.len() {
+            assert_eq!(out[i], source[i], "top_k=0 should return source unchanged");
+        }
+    }
+
+    /// Regression: `decode_f0_logits` with `n_bins=0` previously panicked
+    /// because `bin_to_freq[0]` was indexed on an empty Vec. The fix
+    /// early-returns zeros of shape `[batch, time]`.
+    #[test]
+    fn test_decode_f0_logits_zero_bins_returns_zeros() {
+        let f0 = decode_f0_logits(&[], 1, 0, 3, 48, 20.0, 4);
+        assert_eq!(f0, vec![0.0, 0.0, 0.0]);
+    }
+
+    /// Regression: `decode_f0_logits` with `top_k=0` previously panicked
+    /// because the top-k scan produced `(0, NEG_INFINITY)` default entries,
+    /// then `(NEG_INFINITY - NEG_INFINITY).exp() = NaN` propagated. The fix
+    /// early-returns zeros of shape `[batch, time]`.
+    #[test]
+    fn test_decode_f0_logits_topk_zero_returns_zeros() {
+        let logits = vec![10.0; 4 * 2]; // [B=1, n_bins=4, T=2]
+        let f0 = decode_f0_logits(&logits, 1, 4, 2, 48, 20.0, 0);
+        assert_eq!(f0, vec![0.0, 0.0]);
+    }
+
+    /// Regression: `decode_f0_logits` length mismatch should be a clean
+    /// assert (with a helpful message) rather than a deep index-out-of-
+    /// bounds panic somewhere in the inner top-k scan loop.
+    #[test]
+    #[should_panic(expected = "must equal batch*n_bins*time")]
+    fn test_decode_f0_logits_length_mismatch_panics_cleanly() {
+        let _ = decode_f0_logits(&[1.0; 7], 1, 4, 2, 48, 20.0, 4); // 7 != 1*4*2=8
+    }
+
+    /// Regression: `sola_find_best_offset` previously computed
+    /// `crossfade_size + sola_search_size` without `saturating_add`, so on
+    /// adversarial huge inputs the addition wrapped to a small value,
+    /// bypassed the `tail.len() < ...` check, and let the inner loop index
+    /// `tail[offset..offset + crossfade_size]` out of bounds. The fix uses
+    /// `saturating_add` and treats overflow as "tail too short" (return 0).
+    #[test]
+    fn test_sola_find_best_offset_overflow_safe() {
+        // Huge `sola_search_size` near usize::MAX — must NOT panic, must NOT
+        // OOB-index. The early-return (saturating-add overflow → required is
+        // usize::MAX > tail.len()) returns 0.
+        let chunk = vec![1.0, 2.0, 3.0, 4.0];
+        let tail = vec![0.0; 100];
+        let offset = sola_find_best_offset(&chunk, &tail, usize::MAX);
+        assert_eq!(offset, 0, "overflow-safe path must early-return 0");
+    }
+
+    /// Regression: `synth_harmonics` previously had no length check on
+    /// `amplitudes`, so a too-short amplitudes slice panicked deep in the
+    /// harmonic loop with an opaque index-out-of-bounds trace. The fix
+    /// asserts up-front with a descriptive message.
+    #[test]
+    #[should_panic(expected = "must equal (n_harmonics + 1) * T")]
+    fn test_synth_harmonics_amplitudes_too_short_panics_cleanly() {
+        let f0 = vec![100.0; 240];
+        let amps = vec![0.0; 10]; // way too short for (1+1)*240=480
+        let _ = synth_harmonics(&f0, &amps, 1, 24000);
+    }
+
+    /// Regression: `synth_harmonics` with `sr=0` previously produced
+    /// `phase_step = inf` and `phase = [inf, NaN, ...]`. The fix asserts
+    /// `sr > 0` up-front (the audio sample rate is a precondition, not a
+    /// runtime parameter — it should be set correctly at construction).
+    #[test]
+    #[should_panic(expected = "sr must be > 0")]
+    fn test_synth_harmonics_sr_zero_panics_cleanly() {
+        let f0 = vec![100.0; 240];
+        let amps = vec![0.0; 2 * 240];
+        let _ = synth_harmonics(&f0, &amps, 1, 0);
     }
 
     /// Cross-validation vs the REAL Python `tinyvc.match_features(metrics='cos')`
