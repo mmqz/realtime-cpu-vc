@@ -1,0 +1,153 @@
+{
+  "source": "data/source/source_001.wav",
+  "source_speaker": "p232",
+  "source_text_id": "001",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.308748722076416,
+      "source_sim": 0.23700618743896484,
+      "vc_effect": 0.07174253463745117,
+      "rtf": 0.0670438218000072,
+      "infer_time_ms": 335.21910900003604,
+      "out_duration_s": 5.0
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.3860265016555786,
+      "source_sim": 0.27095693349838257,
+      "vc_effect": 0.11506956815719604,
+      "rtf": 0.052159846200004266,
+      "infer_time_ms": 260.79923100002134,
+      "out_duration_s": 5.0
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.3258541524410248,
+      "source_sim": 0.27950921654701233,
+      "vc_effect": 0.04634493589401245,
+      "rtf": 0.05379928380000365,
+      "infer_time_ms": 268.99641900001825,
+      "out_duration_s": 5.0
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": 0.13595478236675262,
+      "source_sim": 0.2915286719799042,
+      "vc_effect": -0.15557388961315155,
+      "rtf": 0.05384260160000167,
+      "infer_time_ms": 269.21300800000836,
+      "out_duration_s": 5.0
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.14914599061012268,
+      "source_sim": 0.22149407863616943,
+      "vc_effect": -0.07234808802604675,
+      "rtf": 0.05271782419999908,
+      "infer_time_ms": 263.58912099999543,
+      "out_duration_s": 5.0
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.2611460298299789,
+    "mean_source_sim": 0.2600990176200867,
+    "mean_vc_effect": 0.001047012209892273,
+    "mean_rtf": 0.055912675520003174
+  },
+  "baseline_comparison": {
+    "path3_pitch_shifted_mean_target_sim": 0.42,
+    "path3_pitch_shifted_mean_source_sim": 0.367,
+    "path3_pitch_shifted_mean_vc_effect": 0.053,
+    "path3_pitch_shifted_mean_rtf": 0.073,
+    "delta_vc_effect": -0.05195298779010773,
+    "delta_target_sim": -0.15885397017002106
+  },
+  "campplus_distinctness": {
+    "model": "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+    "dim": 192,
+    "n_voices": 5,
+    "voices": [
+      "voice_0.wav",
+      "voice_1.wav",
+      "voice_2.wav",
+      "voice_3.wav",
+      "voice_4.wav"
+    ],
+    "pairwise_cosine": {
+      "voice_1_vs_voice_2": 0.5647129416465759,
+      "voice_1_vs_voice_3": 0.4381134510040283,
+      "voice_0_vs_voice_3": 0.36331889033317566,
+      "voice_2_vs_voice_4": 0.3345312178134918,
+      "voice_0_vs_voice_1": 0.2791888415813446,
+      "voice_1_vs_voice_4": 0.27270054817199707,
+      "voice_2_vs_voice_3": 0.2570287883281708,
+      "voice_0_vs_voice_2": 0.24948139488697052,
+      "voice_3_vs_voice_4": 0.23570983111858368,
+      "voice_0_vs_voice_4": 0.13816389441490173
+    },
+    "matrix": [
+      [
+        1.0,
+        0.2791888415813446,
+        0.24948139488697052,
+        0.36331889033317566,
+        0.13816389441490173
+      ],
+      [
+        0.2791888415813446,
+        1.0,
+        0.5647129416465759,
+        0.4381134510040283,
+        0.27270054817199707
+      ],
+      [
+        0.24948139488697052,
+        0.5647129416465759,
+        1.0,
+        0.2570287883281708,
+        0.3345312178134918
+      ],
+      [
+        0.36331889033317566,
+        0.4381134510040283,
+        0.2570287883281708,
+        1.0,
+        0.23570983111858368
+      ],
+      [
+        0.13816389441490173,
+        0.27270054817199707,
+        0.3345312178134918,
+        0.23570983111858368,
+        1.0
+      ]
+    ],
+    "summary": {
+      "mean": 0.313294979929924,
+      "max": 0.5647129416465759,
+      "max_pair": [
+        1,
+        2
+      ],
+      "min": 0.13816389441490173,
+      "min_pair": [
+        0,
+        4
+      ]
+    },
+    "acceptance_pass": true,
+    "baseline_comparison": {
+      "path3_pitch_shifted_mean": 0.45,
+      "path3_pitch_shifted_range": [
+        0.184,
+        0.867
+      ]
+    }
+  }
+}

@@ -46,6 +46,25 @@ data/test/*.wav
 !data/source/.gitkeep
 !data/voices/.gitkeep
 
+# M0.5 paired_hard — 130 parallel VCTK pairs, ~35 MB total. Regenerable via
+# `python3 scripts/m05_real_voices.py`. Only commit the manifest (index.json).
+data/paired_hard/*.wav
+!data/paired_hard/.gitkeep
+
+# M0.5 legacy archives — old pitch_shifted fixtures + old synthetic sources.
+data/legacy/
+
+# M0.5 baseline result JSON — track this (small, ~4 KB, needed for ablation)
+!data/m05_v1_baseline.json
+
+# M0.5 CAMPPlus distinctness result — track this (small)
+!data/voices/campplus_distinctness.json
+
+# download/ — large VC output wavs (~1 MB each × many experiments).
+# Only track M0.5 baseline outputs (vc_m05_voice_*.wav) for ablation comparison.
+download/*.wav
+!download/vc_m05_voice_*.wav
+
 # ----------------------------------------------------------------------------
 # Future v2.0 weights — GGML quantized Rust weights (after src_rust rewrite)
 # ----------------------------------------------------------------------------
