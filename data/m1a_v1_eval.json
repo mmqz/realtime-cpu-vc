@@ -1,0 +1,57 @@
+{
+  "source": "data/source/source_001.wav",
+  "model_weights": "models/voicepack_v1.safetensors",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.24878980219364166,
+      "source_sim": 0.2722984850406647,
+      "vc_effect": -0.02350868284702301,
+      "decode_time_ms": 285.2721980000297
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.15696704387664795,
+      "source_sim": 0.28474754095077515,
+      "vc_effect": -0.1277804970741272,
+      "decode_time_ms": 225.5967780000674
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.2476690411567688,
+      "source_sim": 0.2657126784324646,
+      "vc_effect": -0.0180436372756958,
+      "decode_time_ms": 227.48041199997715
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": 0.1289341151714325,
+      "source_sim": 0.2971215546131134,
+      "vc_effect": -0.1681874394416809,
+      "decode_time_ms": 235.44790300002205
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.16277024149894714,
+      "source_sim": 0.31218400597572327,
+      "vc_effect": -0.14941376447677612,
+      "decode_time_ms": 226.19411999994554
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.18902604877948762,
+    "mean_source_sim": 0.2864128530025482,
+    "mean_vc_effect": -0.0973868042230606,
+    "delta_vs_m05": -0.0983868042230606
+  },
+  "baseline_comparison": {
+    "m05_v1_baseline_mean_target_sim": 0.261,
+    "m05_v1_baseline_mean_source_sim": 0.26,
+    "m05_v1_baseline_mean_vc_effect": 0.001
+  }
+}
