@@ -1496,9 +1496,9 @@ mod tests {
     ///
     /// To regenerate the fixture:
     /// ```bash
-    /// cd /home/z/my-project/prototype
-    /// /home/z/.venv/bin/python -c "
-    /// import sys; sys.path.insert(0,'src'); sys.path.insert(0,'/home/z/my-project/repos/tinyvc')
+    /// cd .
+    /// ./venv/bin/python -c "
+    /// import sys; sys.path.insert(0,'src'); sys.path.insert(0,'../repos/tinyvc')
     /// import torch, numpy as np
     /// from module.tinyvc import match_features
     /// np.random.seed(0x1234_5678)

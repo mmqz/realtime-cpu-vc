@@ -933,7 +933,7 @@ mod tests {
 
     /// Path to the prototype's ONNX model directory. Used by all tests below.
     /// Tests auto-skip (with a stderr note) if a required ONNX file is absent.
-    const MODELS_DIR: &str = "/home/z/my-project/prototype/models";
+    const MODELS_DIR: &str = "./models";
 
     fn have(p: &str) -> bool {
         Path::new(p).exists()
