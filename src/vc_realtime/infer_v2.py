@@ -1,5 +1,4 @@
 """
-from typing import Any
 vc_realtime.infer_v2 — v2 hybrid inference (Option A: minimal integration).
 
 Architecture (verified shapes)
@@ -63,6 +62,7 @@ Benchmarking::
         --source data/source/source_001.wav --voice-id 0 \
         --ref data/voices/voice_0.wav
 """
+from typing import Any
 
 from __future__ import annotations
 
