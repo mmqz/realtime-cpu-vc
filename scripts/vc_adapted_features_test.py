@@ -73,7 +73,7 @@ for _mod_name, _attrs in (
         sys.modules[_mod_name] = _stub
 
 # Make upstream TinyVC importable.
-TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "/home/z/my-project/repos/tinyvc"))
+TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "../repos/tinyvc"))
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 # Make local `src` importable for prototype-side helpers (harmless if unused).
@@ -96,7 +96,7 @@ DEFAULT_NORM_DB = -3.0
 HUBERT_LAYER = 4  # TinyVC's ConvNeXt was distilled from WavLM layer 4
 STATS_DUR_SEC = 10.0  # seconds per voice used to estimate distribution stats
 
-OUTPUT_DIR = "/home/z/my-project/download"
+OUTPUT_DIR = "./download"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

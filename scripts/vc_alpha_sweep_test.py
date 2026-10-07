@@ -66,7 +66,7 @@ for _mod_name, _attrs in (
         sys.modules[_mod_name] = _stub
 
 # Make upstream TinyVC importable.
-TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "/home/z/my-project/repos/tinyvc"))
+TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "../repos/tinyvc"))
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 sys.path.insert(0, "src")  # local prototype helpers (harmless if unused)
@@ -82,7 +82,7 @@ torch.set_num_threads(2)
 
 SAMPLE_RATE = 24000
 DEFAULT_NORM_DB = -3.0
-OUTPUT_DIR = "/home/z/my-project/download"
+OUTPUT_DIR = "./download"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

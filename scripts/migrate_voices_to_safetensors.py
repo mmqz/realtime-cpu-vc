@@ -27,7 +27,7 @@ from pathlib import Path
 import torch
 from safetensors.torch import save_file
 
-MODELS = Path("/home/z/my-project/prototype/models")
+MODELS = Path("./models")
 
 
 def main() -> int:

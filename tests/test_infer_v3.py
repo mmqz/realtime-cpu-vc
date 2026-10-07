@@ -14,7 +14,7 @@ Four tests:
 
 Run::
 
-    cd /home/z/my-project/prototype
+    cd .
     python3 -m pytest tests/test_infer_v3.py -v
 """
 from pathlib import Path

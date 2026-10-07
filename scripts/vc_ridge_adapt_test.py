@@ -5,7 +5,7 @@ Fixes SolD's noise blowup by adding λ to denominator.
 adapted[c] = (hubert[c] - μ_h[c]) / (σ_h[c] + λ) × σ_t[c] + μ_t[c]
 """
 import sys, os, time, numpy as np, torch, soundfile as sf, librosa
-sys.path.insert(0, 'src'); sys.path.insert(0, '/home/z/my-project/repos/tinyvc')
+sys.path.insert(0, 'src'); sys.path.insert(0, '../repos/tinyvc')
 sys.modules['torchfcpe'] = type(sys)('torchfcpe'); sys.modules['torchfcpe'].spawn_bundled_infer_model = lambda *a: None
 sys.modules['pyworld'] = type(sys)('pyworld'); sys.modules['pyworld'].dio = lambda *a: None; sys.modules['pyworld'].harvest = lambda *a: None; sys.modules['pyworld'].stonemask = lambda *a: None
 

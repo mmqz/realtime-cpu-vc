@@ -30,7 +30,7 @@ import torch
 import torch.nn.functional as F
 
 # Make `module.*` (upstream TinyVC) importable
-sys.path.insert(0, "/home/z/my-project/repos/tinyvc")
+sys.path.insert(0, "../repos/tinyvc")
 
 # Stub optional TinyVC deps we don't exercise. `module/utils/__init__.py`
 # imports `f0_estimation` → `torchfcpe` + `pyworld`. We only need the

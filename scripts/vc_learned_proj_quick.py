@@ -7,7 +7,7 @@ Task B (SolI): Combine SolG multi-layer fusion (L4+L6+L8) with SolC scalar
 adaptation applied to the L4 channel block.
 """
 import sys, os, time, numpy as np, torch, soundfile as sf, librosa
-sys.path.insert(0, 'src'); sys.path.insert(0, '/home/z/my-project/repos/tinyvc')
+sys.path.insert(0, 'src'); sys.path.insert(0, '../repos/tinyvc')
 sys.modules['torchfcpe'] = type(sys)('torchfcpe'); sys.modules['torchfcpe'].spawn_bundled_infer_model = lambda *a: None
 sys.modules['pyworld'] = type(sys)('pyworld'); sys.modules['pyworld'].dio = lambda *a: None; sys.modules['pyworld'].harvest = lambda *a: None; sys.modules['pyworld'].stonemask = lambda *a: None
 
@@ -103,7 +103,7 @@ for vid in range(5):
     cr = match_features(content, target, k=4, alpha=0.0)
     with torch.no_grad(): out = dec.infer(cr, f0, energy)
     out = out.squeeze().numpy()
-    sf.write(f'/home/z/my-project/download/vc_solE_voice_{vid}.wav', out, sr)
+    sf.write(f'./download/vc_solE_voice_{vid}.wav', out, sr)
     oe = emb(out, sr)
     print(f"  voice_{vid}: target={cos(oe,tgt_e[vid]):.3f}, source={cos(oe,src_e):.3f}, VC_effect={cos(oe,tgt_e[vid])-cos(oe,src_e):.3f}")
 
@@ -162,6 +162,6 @@ for vid in range(5):
     # Use first 768 channels for decoder
     with torch.no_grad(): out = dec.infer(cr[:, :768, :], f0, energy)
     out = out.squeeze().numpy()
-    sf.write(f'/home/z/my-project/download/vc_solI_voice_{vid}.wav', out, sr)
+    sf.write(f'./download/vc_solI_voice_{vid}.wav', out, sr)
     oe = emb(out, sr)
     print(f"  voice_{vid}: target={cos(oe,tgt_e[vid]):.3f}, source={cos(oe,src_e):.3f}, VC_effect={cos(oe,tgt_e[vid])-cos(oe,src_e):.3f}")

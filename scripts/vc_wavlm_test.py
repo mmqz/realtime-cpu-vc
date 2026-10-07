@@ -69,7 +69,7 @@ for _mod_name, _attrs in (
 import librosa  # noqa: E402
 
 # Make upstream TinyVC importable.
-TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "/home/z/my-project/repos/tinyvc"))
+TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "../repos/tinyvc"))
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 
@@ -90,7 +90,7 @@ CONTENT_DIM = 768
 DEFAULT_NORM_DB = -3.0
 WAVLM_LAYER = 4  # TinyVC's ConvNeXt-v2 was distilled FROM WavLM layer 4.
 
-OUTPUT_DIR = "/home/z/my-project/download"
+OUTPUT_DIR = "./download"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

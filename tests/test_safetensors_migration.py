@@ -10,7 +10,7 @@ Verifies:
 
 Run::
 
-    cd /home/z/my-project/prototype
+    cd .
     python3 -m pytest tests/test_safetensors_migration.py -v
 """
 from __future__ import annotations
@@ -22,9 +22,9 @@ import numpy as np
 import pytest
 import torch
 
-ROOT = Path("/home/z/my-project/prototype")
+ROOT = Path(".")
 MODELS = ROOT / "models"
-PYBIN = "/home/z/.venv/bin/python"
+PYBIN = "python3"
 
 # `conftest.py` at the prototype root prepends `src/` to sys.path so the
 # import below works without `pip install -e .`.

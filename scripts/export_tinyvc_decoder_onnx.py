@@ -50,8 +50,8 @@ FP32 L2 norm without calibration data.
 
 Usage
 -----
-  /home/z/.venv/bin/python scripts/export_tinyvc_decoder_onnx.py
-  /home/z/.venv/bin/python scripts/export_tinyvc_decoder_onnx.py --no-quantize
+  python3 scripts/export_tinyvc_decoder_onnx.py
+  python3 scripts/export_tinyvc_decoder_onnx.py --no-quantize
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ import onnxruntime as ort
 import torch
 
 # Make the TinyVC package importable (MIT-licensed TinyVC upstream).
-TINYVC_ROOT = Path("/home/z/my-project/repos/tinyvc")
+TINYVC_ROOT = Path("../repos/tinyvc")
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 
@@ -247,10 +247,10 @@ def smoke_test(onnx_path: Path) -> None:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--decoder-pt",
-                   default="/home/z/my-project/prototype/models/decoder.pt",
+                   default="./models/decoder.pt",
                    help="Path to TinyVC decoder PyTorch weights")
     p.add_argument("--models-dir",
-                   default="/home/z/my-project/prototype/models",
+                   default="./models",
                    help="Output directory for *.onnx")
     p.add_argument("--t-frames", type=int, default=DEFAULT_T_FRAMES,
                    help=f"Number of frames in the tracing input "

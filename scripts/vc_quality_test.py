@@ -16,7 +16,7 @@ torch.set_num_threads(2)
 
 from vc_realtime.infer_v1 import V1Infer
 
-OUTPUT_DIR = '/home/z/my-project/download'
+OUTPUT_DIR = './download'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ============================================================
@@ -93,8 +93,8 @@ for i, (f0, formants, label) in enumerate(voices_config):
 
 # Rebuild voices.pt with new distinct voices
 print("\n  Rebuilding voices.pt kNN index...")
-os.system(f'/home/z/.venv/bin/python scripts/build_voices_index.py 2>&1 | tail -1')
-os.system(f'/home/z/.venv/bin/python scripts/migrate_voices_to_safetensors.py 2>&1 | tail -1')
+os.system(f'python3 scripts/build_voices_index.py 2>&1 | tail -1')
+os.system(f'python3 scripts/migrate_voices_to_safetensors.py 2>&1 | tail -1')
 
 # ============================================================
 # Step 3: Run VC with different alpha values

@@ -42,8 +42,8 @@ Why faithful to upstream (not 3-output ``content+f0+energy``):
 
 Usage
 -----
-  /home/z/.venv/bin/python scripts/export_tinyvc_encoder_onnx.py
-  /home/z/.venv/bin/python scripts/export_tinyvc_encoder_onnx.py --quantize
+  python3 scripts/export_tinyvc_encoder_onnx.py
+  python3 scripts/export_tinyvc_encoder_onnx.py --quantize
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ import torch
 
 # Make the TinyVC package importable. We import only the encoder module
 # (MIT-licensed TinyVC) and never touch the CC-BY-NC F5-TTS code.
-TINYVC_ROOT = Path("/home/z/my-project/repos/tinyvc")
+TINYVC_ROOT = Path("../repos/tinyvc")
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 
@@ -167,10 +167,10 @@ def smoke_test(onnx_path: Path) -> None:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--encoder-pt",
-                   default="/home/z/my-project/prototype/models/encoder.pt",
+                   default="./models/encoder.pt",
                    help="Path to TinyVC encoder PyTorch weights")
     p.add_argument("--models-dir",
-                   default="/home/z/my-project/prototype/models",
+                   default="./models",
                    help="Output directory for *.onnx")
     p.add_argument("--t-frames", type=int, default=DEFAULT_T_FRAMES,
                    help=f"Number of frames in the tracing input "

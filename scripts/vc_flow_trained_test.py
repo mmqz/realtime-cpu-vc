@@ -29,7 +29,7 @@ import torch
 # Make `vc_realtime` importable as a top-level package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 # Make the upstream TinyVC `module.*` package importable
-sys.path.insert(0, "/home/z/my-project/repos/tinyvc")
+sys.path.insert(0, "../repos/tinyvc")
 
 torch.set_num_threads(2)
 
@@ -37,7 +37,7 @@ from vc_realtime.infer_v1 import V1Infer  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT / "models"
-OUTPUT_DIR = Path("/home/z/my-project/download")
+OUTPUT_DIR = Path("./download")
 SOURCE_WAV = ROOT / "data" / "source" / "source_real_001.wav"
 VOICE_WAV_TPL = str(ROOT / "data" / "voices" / "voice_{}.wav")
 

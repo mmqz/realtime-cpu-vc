@@ -78,7 +78,7 @@ from pathlib import Path
 import torch
 
 # -- Path bootstrap: add the cloned OpenVoice repo so `import openvoice` works.
-OPENVOICE_REPO = Path("/home/z/my-project/repos/OpenVoice")
+OPENVOICE_REPO = Path("../repos/OpenVoice")
 if str(OPENVOICE_REPO) not in sys.path:
     sys.path.insert(0, str(OPENVOICE_REPO))
 
@@ -88,7 +88,7 @@ from openvoice.models import ReferenceEncoder, ResidualCouplingBlock, Synthesize
 # -- Constants from the v2 config (filter_length=1024 → spec_channels=513)
 CONFIG_PATH = OPENVOICE_REPO / "checkpoints_v2" / "converter" / "config.json"
 CKPT_PATH = OPENVOICE_REPO / "checkpoints_v2" / "converter" / "checkpoint.pth"
-OUT_DIR = Path("/home/z/my-project/prototype/models")
+OUT_DIR = Path("./models")
 
 # v2 config values (read at runtime in __main__ for self-documentation, but
 # these constants match the loaded config.json and are used as the dummy

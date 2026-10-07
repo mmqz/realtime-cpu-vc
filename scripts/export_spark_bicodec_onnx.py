@@ -103,7 +103,7 @@ import torch
 import torch.nn.functional as F
 
 # -- Path bootstrap: add the cloned Spark-TTS repo so `import sparktts` works.
-SPARK_REPO = Path("/home/z/my-project/repos/spark-tts")
+SPARK_REPO = Path("../repos/spark-tts")
 if str(SPARK_REPO) not in sys.path:
     sys.path.insert(0, str(SPARK_REPO))
 
@@ -114,7 +114,7 @@ from sparktts.modules.speaker.speaker_encoder import SpeakerEncoder  # noqa: E40
 # for self-documentation, but these match the loaded config and are used as
 # the dummy input shapes during tracing).
 BICODEC_DIR = SPARK_REPO / "ckpt" / "BiCodec"
-OUT_DIR = Path("/home/z/my-project/prototype/models")
+OUT_DIR = Path("./models")
 
 NUM_MELS = 128          # mel_params.num_mels (NOT 80 — Spark uses 128)
 OUT_DIM = 1024         # speaker_encoder.out_dim (NOT 512 — Spark uses 1024)

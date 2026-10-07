@@ -60,7 +60,7 @@ Mean = 0.450 — genuinely distinct (vs synthetic sine fixtures 0.82-0.999)
 4. RTF of 0.073 (≈13.7× real-time) is well within the v1 budget for on-device CPU inference.
 
 ### Files saved
-- `/home/z/my-project/download/vc_real_voice_0.wav` … `_4.wav` — VC outputs (24kHz)
+- `./download/vc_real_voice_0.wav` … `_4.wav` — VC outputs (24kHz)
 - `data/source/voice_tts_base.wav` — 30s TTS speech
 - `data/source/source_real_001.wav` — 5s source
 - `data/voices/voice_0.wav` … `voice_4.wav` — 5 pitch-shifted target voices

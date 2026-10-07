@@ -96,8 +96,8 @@ for _mod_name, _attrs in (
         sys.modules[_mod_name] = _stub
 
 # --- Make the upstream TinyVC Python source importable ----------------------
-# The repository is cloned at /home/z/my-project/repos/tinyvc (read-only).
-TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "/home/z/my-project/repos/tinyvc"))
+# The repository is cloned at ../repos/tinyvc (read-only).
+TINYVC_ROOT = Path(os.environ.get("TINYVC_ROOT", "../repos/tinyvc"))
 if str(TINYVC_ROOT) not in sys.path:
     sys.path.insert(0, str(TINYVC_ROOT))
 

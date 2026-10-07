@@ -145,7 +145,7 @@ module = [
     "transformers.*",
     "pyaudio.*",
     "webrtcvad.*",
-    "module.*",  # TinyVC upstream source under /home/z/my-project/repos/tinyvc/
+    "module.*",  # TinyVC upstream source under ../repos/tinyvc/
 ]
 ignore_missing_imports = true
 

@@ -44,7 +44,7 @@ for _mod_name, _attrs in (
         sys.modules[_mod_name] = _stub
 
 # Make TinyVC importable
-TINYVC_ROOT = Path('/home/z/my-project/repos/tinyvc')
+TINYVC_ROOT = Path('../repos/tinyvc')
 sys.path.insert(0, str(TINYVC_ROOT))
 
 from module.tinyvc import Encoder  # noqa: E402
