@@ -114,7 +114,7 @@ unsafe fn store_f32x4(v: f32x4, slice: &mut [f32]) {
 fn dot_product_simd(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     let mut sum = f32x4::from([0.0f32; 4]);
-    let chunks = a.chunks_exact(4).zip(b.chunks_exact(4));
+    let chunks = a.as_chunks::<4>().0.iter().zip(b.chunks_exact(4));
     for (ac, bc) in chunks {
         // Safe + branchless load — `chunks_exact(4)` guarantees 4 elements.
         // Single `movups`/`vld1q` SIMD load (vs. 4 scalar loads + insertps
@@ -200,16 +200,16 @@ fn fast_sin(x: f32) -> f32 {
     // Split-mantissa π/2 constants — sum exactly to π/2 with ~3 mantissa worth
     // of precision (one is exact, two absorb the rounding error).
     const DP1: f32 = 0.78515625 * 2.0; // 1.5703125 — exact
-    const DP2: f32 = 2.4187564849853515625E-4 * 2.0; // ~4.8e-4
-    const DP3: f32 = 3.77489497744594108E-8 * 2.0; // ~7.5e-8
+    const DP2: f32 = 2.418_756_5E-4 * 2.0; // ~4.8e-4
+    const DP3: f32 = 3.774_895E-8 * 2.0; // ~7.5e-8
 
     // Minimax polynomial coefficients (sin & cos, degree 2 in x²).
-    const P0_SIN: f32 = -1.6666654611E-1;
-    const P1_SIN: f32 = 8.3321608736E-3;
-    const P2_SIN: f32 = -1.9515295891E-4;
-    const P0_COS: f32 = 4.166664568298827E-2;
-    const P1_COS: f32 = -1.388731625493765E-3;
-    const P2_COS: f32 = 2.443315711809948E-5;
+    const P0_SIN: f32 = -1.666_665_5E-1;
+    const P1_SIN: f32 = 8.332_161E-3;
+    const P2_SIN: f32 = -1.951_529_6E-4;
+    const P0_COS: f32 = 4.166_664_6E-2;
+    const P1_COS: f32 = -1.388_731_6E-3;
+    const P2_COS: f32 = 2.443_315_7E-5;
 
     const TWO_OVER_PI: f32 = 2.0 / core::f32::consts::PI;
     // Beyond this magnitude, the algorithm breaks down — return 0 (mirrors
@@ -260,7 +260,7 @@ fn fast_sin(x: f32) -> f32 {
     //   - q mod 4 ∈ {2, 3} → bit 1 of q = 1 → sign bit set
     // Combined with x's own sign bit: result is negative iff (q mod 4 ∈ {2, 3})
     // XOR (x < 0), which is the correct sign for sin in each quadrant.
-    let q_sign_bit = (((q as u32) & 2) << 30) as u32; // bit 1 of q → bit 31
+    let q_sign_bit = (((q as u32) & 2) << 30); // bit 1 of q → bit 31
     let x_sign_bit = x.to_bits() & 0x8000_0000;
     let result_bits = sin1.to_bits() ^ q_sign_bit ^ x_sign_bit;
     f32::from_bits(result_bits)

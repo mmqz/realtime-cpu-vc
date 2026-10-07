@@ -355,7 +355,9 @@ impl StreamingPipeline {
         // Open the audio device with the GIL-free callback. On failure,
         // free the callback state to avoid a leak + return the error.
         let callback: MaDataCallback = audio_callback;
-        let audio_device = match AudioDevice::open(&config, callback, callback_ptr as *mut c_void) {
+        // SAFETY: callback_ptr is a valid Box::into_raw pointer that remains
+        // valid until stop() frees it via Box::from_raw.
+        let audio_device = match unsafe { AudioDevice::open(&config, callback, callback_ptr as *mut c_void) } {
             Ok(dev) => dev,
             Err(e) => {
                 // SAFETY: `callback_ptr` was just allocated via
@@ -550,12 +552,7 @@ extern "C" fn audio_callback(
     // samples (the playback buffer for this callback invocation).
     let output_slice = unsafe { std::slice::from_raw_parts_mut(output, n) };
     for slot in output_slice {
-        *slot = match state.output_consumer.pop() {
-            Ok(s) => s,
-            // Silence if the decoder hasn't pushed anything yet (startup
-            // underrun) or has fallen behind (steady-state underrun).
-            Err(_) => 0.0,
-        };
+        *slot = state.output_consumer.pop().unwrap_or(0.0);
     }
 }
 

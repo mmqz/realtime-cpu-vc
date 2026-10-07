@@ -99,7 +99,7 @@ impl StreamingConv1dState {
         let state_total = state_len * ch;
 
         assert!(
-            input.len() % ch == 0,
+            input.len().is_multiple_of(ch),
             "input.len() ({}) must be a multiple of channels ({})",
             input.len(),
             ch,

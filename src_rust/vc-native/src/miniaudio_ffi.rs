@@ -139,7 +139,10 @@ impl AudioDevice {
     /// Returns `Err(String)` with the miniaudio error code if device
     /// initialization fails (typical in headless environments: `MA_NO_DEVICE`
     /// = -204, `MA_NO_BACKEND` = -203, `MA_FAILED_TO_INIT_BACKEND` = -400).
-    pub fn open(
+    /// # Safety
+    /// The caller must ensure that `user_data` points to valid memory
+    /// that remains valid for the lifetime of the audio device.
+    pub unsafe fn open(
         config: &AudioConfig,
         callback: MaDataCallback,
         user_data: *mut c_void,
@@ -285,7 +288,8 @@ mod tests {
         }
 
         let config = AudioConfig::default();
-        let result = AudioDevice::open(&config, noop_callback, std::ptr::null_mut());
+        // SAFETY: null_mut() is a valid no-op user_data pointer.
+        let result = unsafe { AudioDevice::open(&config, noop_callback, std::ptr::null_mut()) };
         match result {
             Ok(mut device) => {
                 // Hardware is available — verify start/stop cycle works.
@@ -324,7 +328,8 @@ mod tests {
             _u: *mut c_void, _o: *mut f32, _i: *const f32, _f: u32,
         ) {}
         let config = AudioConfig::default();
-        if let Ok(device) = AudioDevice::open(&config, noop, std::ptr::null_mut()) {
+        // SAFETY: null_mut() is a valid no-op user_data pointer.
+        if let Ok(device) = unsafe { AudioDevice::open(&config, noop, std::ptr::null_mut()) } {
             assert!(!device.is_started());
         }
     }
