@@ -35,29 +35,28 @@ use std::os::raw::c_void;
 use crate::AudioConfig;
 
 // ============================================================
-// Callback typedef
+// Callback typedef (internal — not part of the public API)
 // ============================================================
 
-/// Simplified data callback signature.
+/// Simplified C data callback signature passed to the miniaudio shim.
+///
+/// This is an internal implementation detail of [`AudioDevice::open`]: the
+/// public API accepts a safe `FnMut(&[f32], &mut [f32]) + Send + 'static`
+/// closure, which we wrap in a C trampoline internally. Users never write
+/// `unsafe extern "C" fn` themselves.
 ///
 /// Called by miniaudio's audio thread (GIL-free, real-time priority). The
-/// caller must:
+/// callback must:
 ///  - read `frame_count * channels` f32 samples from `input` (capture)
 ///  - write `frame_count * channels` f32 samples to `output` (playback)
 ///
 /// Both buffers are in interleaved f32 format. `input` is read-only.
 ///
-/// The `user_data` pointer is the same one passed to `AudioDevice::open()`
-/// — typically a raw pointer to an `rtrb::Producer` for capture, or an
-/// `rtrb::Consumer` for playback.
-///
-/// # Safety
-///
 /// The callback must not panic (it runs on a miniaudio thread without
 /// unwind support — panicking aborts the process). It must not call
 /// Python code (holding the GIL on an audio thread risks deadlocks if
 /// the main thread is also waiting on the audio device).
-pub type MaDataCallback = unsafe extern "C" fn(
+type MaDataCallback = unsafe extern "C" fn(
     user_data: *mut c_void,
     output: *mut f32,
     input: *const f32,
@@ -102,51 +101,122 @@ extern "C" {
 ///
 /// The underlying `ma_device` is heap-allocated on the C side (in
 /// `shim_device_t`) so this struct is small (just a non-null pointer + a
-/// `started` flag). On `Drop`, the device is stopped + uninitialized +
-/// freed — there is no manual `close()` needed.
+/// `started` flag + the boxed user callback). On `Drop`, the device is
+/// stopped + uninitialized + freed and the boxed callback is dropped —
+/// there is no manual `close()` needed.
 ///
 /// # Threading
 ///
 /// `AudioDevice` is `Send` (the underlying `ma_device` is owned by miniaudio
-/// and supports cross-thread start/stop) but NOT `Sync` — concurrent calls
-/// to `start`/`stop` from multiple threads are undefined behavior in
-/// miniaudio. The typical pattern is to move the `AudioDevice` into the
-/// miniaudio-callback-side owner thread and call `start`/`stop` only from
-/// there.
+/// and supports cross-thread start/stop; the boxed callback is `Send` by
+/// construction — see [`AudioDevice::open`]'s `F: ... + Send` bound) but
+/// NOT `Sync` — concurrent calls to `start`/`stop` from multiple threads
+/// are undefined behavior in miniaudio. The typical pattern is to move the
+/// `AudioDevice` into the miniaudio-callback-side owner thread and call
+/// `start`/`stop` only from there.
 pub struct AudioDevice {
     /// Opaque handle to the C-side `shim_device_t`. NULL only if the device
     /// failed to open (then we don't have an `AudioDevice` value at all —
     /// `open` returns `Err`).
     handle: *mut c_void,
     started: bool,
+    /// Owned boxed user callback. `Some` while the device is alive so that
+    /// `Drop` can free the closure after the audio device has been stopped
+    /// (which guarantees the callback can no longer fire on miniaudio's
+    /// thread). The raw pointer handed to the C shim aliases this box —
+    /// see [`AudioDevice::open`] for the safety argument.
+    _callback_data: Option<*mut c_void>,
 }
 
 // SAFETY: the underlying `ma_device` is owned by miniaudio and supports
-// cross-thread start/stop. We do NOT share `&AudioDevice` across threads
-// (it's not Sync), only move it between threads.
+// cross-thread start/stop. The `_callback_data` raw pointer aliases a
+// `Box<Box<dyn FnMut(&[f32], &mut [f32]) + Send>>` whose inner closure is
+// `Send` by the `F: Send` bound on `open` — so moving the box across threads
+// is sound. We do NOT share `&AudioDevice` across threads (it's not Sync),
+// only move it between threads.
 unsafe impl Send for AudioDevice {}
 
 impl AudioDevice {
-    /// Open a duplex (capture + playback) audio device.
+    /// Open a duplex (capture + playback) audio device with a safe Rust
+    /// callback closure. No `unsafe` is required from the caller.
     ///
-    /// The callback runs on miniaudio's thread (GIL-free, real-time priority).
-    /// The caller owns the `user_data` pointer — it must outlive the
-    /// `AudioDevice` (i.e., the user must drop the device before dropping
-    /// whatever `user_data` points to).
+    /// The closure runs on miniaudio's audio thread (GIL-free, real-time
+    /// priority). It receives `(input_samples, output_samples)` as
+    /// interleaved f32 slices — read from `input_samples` (capture, length
+    /// `frame_count * channels`) and write to `output_samples` (playback,
+    /// same length). Either slice may be empty if miniaudio passes a null
+    /// buffer for the corresponding direction.
+    ///
+    /// The closure must not panic — miniaudio's audio thread has no unwind
+    /// support and a panic will abort the process. The closure must not call
+    /// Python code (holding the GIL on the audio thread risks deadlocks).
+    ///
+    /// # Ownership / lifetime
+    ///
+    /// `AudioDevice::open` boxes the closure (`Box<Box<dyn FnMut ...>>`) so
+    /// it can be passed to the C shim as a raw `*mut c_void`. The box is
+    /// freed in `AudioDevice::drop` after the device has been stopped (which
+    /// guarantees the callback can no longer fire). The closure thus must
+    /// be `Send + 'static` so the box can be moved across threads + live as
+    /// long as the device.
     ///
     /// # Errors
     ///
     /// Returns `Err(String)` with the miniaudio error code if device
     /// initialization fails (typical in headless environments: `MA_NO_DEVICE`
     /// = -204, `MA_NO_BACKEND` = -203, `MA_FAILED_TO_INIT_BACKEND` = -400).
-    /// # Safety
-    /// The caller must ensure that `user_data` points to valid memory
-    /// that remains valid for the lifetime of the audio device.
-    pub unsafe fn open(
-        config: &AudioConfig,
-        callback: MaDataCallback,
-        user_data: *mut c_void,
-    ) -> Result<Self, String> {
+    /// On failure, the boxed closure is dropped before returning so no leak
+    /// occurs.
+    pub fn open<F>(config: &AudioConfig, callback: F) -> Result<Self, String>
+    where
+        F: FnMut(&[f32], &mut [f32]) + Send + 'static,
+    {
+        // Box the closure inside a `Box<Box<dyn ...>>` so we can erase the
+        // concrete `F` and hand the C shim a single `*mut c_void`. The
+        // outer box is what we keep a raw pointer to; `Drop` reclaims it via
+        // `Box::from_raw`.
+        let boxed: Box<Box<dyn FnMut(&[f32], &mut [f32]) + Send>> =
+            Box::new(Box::new(callback));
+        let user_data = Box::into_raw(boxed) as *mut c_void;
+
+        // C trampoline: the FFI signature is `unsafe extern "C" fn`, but the
+        // closure-based path means *users* never write `unsafe` — only this
+        // one internal function does. The `unsafe` block here is the FFI
+        // boundary (deref the raw pointer + slice the C buffers).
+        extern "C" fn trampoline(
+            user_data: *mut c_void,
+            output: *mut f32,
+            input: *const f32,
+            frame_count: u32,
+        ) {
+            if user_data.is_null() {
+                return;
+            }
+            // SAFETY: `user_data` was created by `Box::into_raw` in `open`
+            // and remains valid until `AudioDevice::drop` reclaims it. The
+            // audio device has already been stopped before `Drop` runs the
+            // reclaim, so the trampoline cannot fire concurrently.
+            let callback = unsafe {
+                &mut *(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>)
+            };
+            let n = frame_count as usize;
+            let input_slice = if input.is_null() || n == 0 {
+                &[][..]
+            } else {
+                // SAFETY: miniaudio guarantees `input` is valid for
+                // `frame_count * channels` f32 reads for this callback.
+                unsafe { std::slice::from_raw_parts(input, n) }
+            };
+            let output_slice = if output.is_null() || n == 0 {
+                &mut [][..]
+            } else {
+                // SAFETY: miniaudio guarantees `output` is valid for
+                // `frame_count * channels` f32 writes for this callback.
+                unsafe { std::slice::from_raw_parts_mut(output, n) }
+            };
+            callback(input_slice, output_slice);
+        }
+
         let mut handle: *mut c_void = std::ptr::null_mut();
         // SAFETY: the FFI call is safe — `shim_open_duplex` writes either a
         // valid handle or NULL into `&mut handle`. The callback signature
@@ -156,12 +226,18 @@ impl AudioDevice {
                 config.sample_rate,
                 config.channels as u32,
                 config.block_size,
-                Some(callback),
+                Some(trampoline),
                 user_data,
                 &mut handle,
             )
         };
         if result != 0 {
+            // SAFETY: on failure, the trampoline was never invoked (the
+            // device was never started), so `user_data` is still owned
+            // solely by this thread. Reclaim the box to avoid a leak.
+            unsafe {
+                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+            }
             return Err(format!(
                 "shim_open_duplex failed with miniaudio error code {} (e.g. -204 MA_NO_DEVICE, -203 MA_NO_BACKEND, -400 MA_FAILED_TO_INIT_BACKEND)",
                 result
@@ -169,11 +245,16 @@ impl AudioDevice {
         }
         if handle.is_null() {
             // Should not happen — shim returns non-zero on failure. Defensive.
+            // SAFETY: as above — device never started, sole ownership.
+            unsafe {
+                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+            }
             return Err("shim_open_duplex returned success but handle is NULL".into());
         }
         Ok(Self {
             handle,
             started: false,
+            _callback_data: Some(user_data),
         })
     }
 
@@ -234,8 +315,21 @@ impl Drop for AudioDevice {
         // SAFETY: `self.handle` is non-null (guaranteed by `open`). The shim's
         // `shim_close` calls `ma_device_uninit` (safe at any state) + `free`.
         // After this call, the handle is invalid — but we're dropping so
-        // no one can use it again.
+        // no one can use it again. Importantly, `shim_close` joins + stops
+        // the audio thread first, so the trampoline can no longer fire by
+        // the time we reclaim the boxed closure below.
         unsafe { shim_close(self.handle) };
+        // Reclaim the boxed user closure. `shim_close` has returned, so the
+        // audio thread is torn down + the trampoline cannot fire again —
+        // sole ownership of the box is on this thread.
+        if let Some(user_data) = self._callback_data.take() {
+            // SAFETY: `user_data` was created by `Box::into_raw` in `open`
+            // and the device has just been closed above, so the trampoline
+            // cannot be running concurrently.
+            unsafe {
+                drop(Box::from_raw(user_data as *mut Box<dyn FnMut(&[f32], &mut [f32]) + Send>));
+            }
+        }
     }
 }
 
@@ -278,18 +372,10 @@ mod tests {
         // Empty no-op callback — just verifies the FFI plumbing. If the device
         // actually opens, the callback will fire on miniaudio's thread but
         // we never call `start()`, so it shouldn't actually fire.
-        extern "C" fn noop_callback(
-            _user_data: *mut c_void,
-            _output: *mut f32,
-            _input: *const f32,
-            _frame_count: u32,
-        ) {
-            // intentionally empty
-        }
-
         let config = AudioConfig::default();
-        // SAFETY: null_mut() is a valid no-op user_data pointer.
-        let result = unsafe { AudioDevice::open(&config, noop_callback, std::ptr::null_mut()) };
+        let result = AudioDevice::open(&config, |_input: &[f32], _output: &mut [f32]| {
+            // intentionally empty
+        });
         match result {
             Ok(mut device) => {
                 // Hardware is available — verify start/stop cycle works.
@@ -324,12 +410,8 @@ mod tests {
     /// If the device fails to open, we skip the assertion (headless).
     #[test]
     fn test_audio_device_is_started_false_before_start() {
-        extern "C" fn noop(
-            _u: *mut c_void, _o: *mut f32, _i: *const f32, _f: u32,
-        ) {}
         let config = AudioConfig::default();
-        // SAFETY: null_mut() is a valid no-op user_data pointer.
-        if let Ok(device) = unsafe { AudioDevice::open(&config, noop, std::ptr::null_mut()) } {
+        if let Ok(device) = AudioDevice::open(&config, |_input: &[f32], _output: &mut [f32]| {}) {
             assert!(!device.is_started());
         }
     }

@@ -41,32 +41,27 @@
 //!
 //! ## miniaudio callback wiring (OPT-10)
 //!
-//! `start_with_audio` opens a duplex `AudioDevice` with a GIL-free `extern
-//! "C"` callback (`audio_callback` below) that runs on miniaudio's audio
-//! thread. The callback receives a raw `*mut c_void` user_data pointer that
-//! we cast back to `&AudioCallbackState` — a heap-allocated box owning the
-//! input ring's `Producer` (mic capture push) + the output ring's
-//! `Consumer` (speaker playback pull). The audio thread is the producer of
-//! the input ring + the consumer of the output ring; the decoder thread owns
-//! the opposite ends — this preserves rtrb's SPSC contract (one producer +
-//! one consumer per ring, on different threads).
-//!
-//! `stop` (and `Drop`) stops the audio device BEFORE joining the decoder
-//! thread + freeing the callback state, so the callback can no longer fire
-//! while we're tearing down shared state. The current `new` +
+//! `start_with_audio` opens a duplex `AudioDevice` with a GIL-free
+//! `FnMut(&[f32], &mut [f32]) + Send + 'static` closure that runs on
+//! miniaudio's audio thread. The closure captures the input ring's
+//! `Producer` (mic capture push) + the output ring's `Consumer` (speaker
+//! playback pull) — both `rtrb` halves are `Send`, so the closure is too.
+//! No raw `*mut c_void` user-data pointer is exposed to the caller; the
+//! `AudioDevice` owns the boxed closure internally and frees it in `Drop`
+//! after the audio device has been stopped (so the callback can no longer
+//! fire while we're tearing down shared state). The current `new` +
 //! `start_decoder` path (manual push/pop) is still supported for tests +
 //! audio-hardware-less environments.
 
-use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-// AudioDevice + MaDataCallback (miniaudio FFI wrapper) + AudioConfig — used by
+// AudioDevice (miniaudio FFI wrapper) + AudioConfig — used by
 // `start_with_audio` to wire the GIL-free audio callback to the rings.
-use crate::miniaudio_ffi::{AudioDevice, MaDataCallback};
+use crate::miniaudio_ffi::AudioDevice;
 use crate::AudioConfig;
 
 /// Full streaming pipeline: SPSC ring (input) → decoder thread → SPSC ring (output).
@@ -98,25 +93,21 @@ pub struct StreamingPipeline {
     running: Arc<AtomicBool>,
     /// Decoder thread handle. `None` if not started or already joined.
     decoder_thread: Option<JoinHandle<()>>,
-    /// Heap-allocated `AudioCallbackState` raw pointer — set by
-    /// `start_with_audio`, freed in `stop` after the audio device is closed.
-    /// `None` on the manual-push path (`new` + `start_decoder`).
-    callback_state: Option<*mut AudioCallbackState>,
     /// miniaudio duplex device — set by `start_with_audio`, dropped in `stop`
     /// (which calls `shim_stop` + `shim_close`). `None` on the manual-push path.
     audio_device: Option<AudioDevice>,
 }
 
-// SAFETY: StreamingPipeline owns a `*mut AudioCallbackState` raw pointer
-// (which is `!Send` by default), but the pointer is only dereferenced by the
-// miniaudio audio callback running on miniaudio's internal thread. The
-// callback stops firing before `stop`/`Drop` frees the box (see `stop`'s
-// implementation: `audio_device.take()` + `dev.stop()` happens before
-// `Box::from_raw(callback_state)`), so no concurrent access is possible.
-// The other fields (`Arc<AtomicBool>`, `Option<JoinHandle<()>>`, rtrb halves)
-// are all `Send`. Restoring `Send` here lets the pipeline be moved across
-// threads (e.g. into a PyO3 wrapper) as before the raw-pointer field was added.
-unsafe impl Send for StreamingPipeline {}
+// `StreamingPipeline` is `Send` automatically: every field is `Send`.
+// - `Option<Producer/Consumer<f32>>`: rtrb halves are `Send` (single-producer /
+//   single-consumer contract — each end owned by exactly one thread).
+// - `Arc<AtomicBool>`, `Option<JoinHandle<()>>`: `Send + Sync`.
+// - `Option<AudioDevice>`: `AudioDevice: Send` (see `miniaudio_ffi.rs`).
+//
+// No `unsafe impl Send` is required — moving the pipeline across threads is
+// sound because the audio device owns its boxed callback (and frees it on
+// `Drop` only after the audio thread is torn down), and the rtrb halves are
+// moved — not aliased — between the audio callback and the decoder thread.
 
 impl StreamingPipeline {
     /// Allocate two SPSC rings (each `block_size * 4` capacity) and the
@@ -138,7 +129,6 @@ impl StreamingPipeline {
             decoder_output_producer: Some(output_prod),
             running: Arc::new(AtomicBool::new(false)),
             decoder_thread: None,
-            callback_state: None,
             audio_device: None,
         }
     }
@@ -267,26 +257,18 @@ impl StreamingPipeline {
     pub fn stop(&mut self) {
         // Signal the decoder thread to exit its main loop.
         self.running.store(false, Ordering::SeqCst);
-        // Stop the audio device BEFORE joining the decoder + freeing the
-        // callback state, so the audio callback stops touching the rings +
-        // dereferencing the raw `callback_state` pointer. `take()` + drop
-        // calls `shim_stop` + `shim_close` (in `AudioDevice::drop`).
+        // Stop the audio device BEFORE joining the decoder thread, so the
+        // audio callback stops touching the rings. `take()` + drop calls
+        // `shim_stop` + `shim_close` (in `AudioDevice::drop`), which also
+        // frees the boxed closure handed to the C shim in `open`.
         if let Some(mut dev) = self.audio_device.take() {
             let _ = dev.stop();
-            // `dev` dropped here → `shim_close` called.
+            // `dev` dropped here → `shim_close` called → audio thread joined.
         }
         // Join the decoder thread. Should exit promptly (it polls
         // `running` every yield cycle).
         if let Some(handle) = self.decoder_thread.take() {
             let _ = handle.join();
-        }
-        // Free the callback state. Safe now: the audio device is closed (so
-        // the callback can no longer fire) + the decoder thread is joined.
-        if let Some(ptr) = self.callback_state.take() {
-            // SAFETY: `ptr` was allocated via `Box::into_raw` in
-            // `start_with_audio`. It's only dereferenced by the audio
-            // callback, which is no longer running (audio device stopped).
-            unsafe { drop(Box::from_raw(ptr)) };
         }
     }
 
@@ -310,10 +292,11 @@ impl StreamingPipeline {
     /// the audio thread (so it can take 5–20ms without glitching the audio
     /// callback, as long as the rings have ~4 blocks of capacity for slack).
     ///
-    /// The `AudioCallbackState` (owning the producer + consumer that go to
-    /// the audio thread) is heap-allocated via `Box::into_raw` and passed as
-    /// the raw `user_data` pointer to `AudioDevice::open`. The pointer is
-    /// freed in `stop`/`Drop` after the audio device has been stopped.
+    /// The audio callback is a safe `FnMut(&[f32], &mut [f32]) + Send + 'static`
+    /// closure that captures the input ring's `Producer` + output ring's
+    /// `Consumer`. `AudioDevice::open` boxes the closure internally and
+    /// frees it in `Drop` after the device has been stopped — no raw pointer
+    /// is exposed to the caller.
     ///
     /// On error (e.g., headless env with no audio backend), returns
     /// `Err(String)` naming the failing FFI call. Safe to call in tests on
@@ -336,50 +319,46 @@ impl StreamingPipeline {
             .checked_mul(4)
             .ok_or_else(|| "block_size * 4 overflow".to_string())?;
 
-        // Split ring ownership: callback state owns input_prod + output_cons,
-        // decoder thread owns input_cons + output_prod. This preserves rtrb's
+        // Split ring ownership: the audio callback owns input_prod + output_cons,
+        // the decoder thread owns input_cons + output_prod. This preserves rtrb's
         // SPSC contract — exactly one producer + one consumer per ring.
         let (input_prod, input_cons) = RingBuffer::<f32>::new(ring_cap);
         let (output_prod, output_cons) = RingBuffer::<f32>::new(ring_cap);
 
-        // Heap-allocate the callback state + take a raw pointer.
-        // The pointer is freed in `stop` (after the audio device is stopped)
-        // or below on `start_with_audio` failure.
-        let callback_state = Box::new(AudioCallbackState {
-            input_producer: input_prod,
-            output_consumer: output_cons,
-            channels: config.channels.max(1) as u32,
-        });
-        let callback_ptr = Box::into_raw(callback_state);
-
-        // Open the audio device with the GIL-free callback. On failure,
-        // free the callback state to avoid a leak + return the error.
-        let callback: MaDataCallback = audio_callback;
-        // SAFETY: callback_ptr is a valid Box::into_raw pointer that remains
-        // valid until stop() frees it via Box::from_raw.
-        let audio_device = match unsafe { AudioDevice::open(&config, callback, callback_ptr as *mut c_void) } {
-            Ok(dev) => dev,
-            Err(e) => {
-                // SAFETY: `callback_ptr` was just allocated via
-                // `Box::into_raw` above + never handed to a live audio
-                // device (open failed), so no concurrent access.
-                unsafe { drop(Box::from_raw(callback_ptr)) };
-                return Err(e);
+        // Build the audio callback as a SAFE closure that captures the ring
+        // halves. `Producer<f32>` and `Consumer<f32>` are `Send`, so the
+        // closure is `Send` — satisfying `AudioDevice::open`'s bound. No raw
+        // pointer / `unsafe impl Send` needed.
+        let mut input_producer = input_prod;
+        let mut output_consumer = output_cons;
+        let audio_callback = move |input: &[f32], output: &mut [f32]| {
+            // Push interleaved input samples (mic capture) to the input ring
+            // for the decoder thread to consume. Non-blocking: drop if full
+            // (typical real-time policy — better to drop input than stall
+            // the audio thread).
+            for &s in input {
+                let _ = input_producer.push(s);
+            }
+            // Pull interleaved output samples (speaker playback) from the
+            // output ring that the decoder thread produced. Non-blocking:
+            // emit silence if empty (startup underrun).
+            for slot in output {
+                *slot = output_consumer.pop().unwrap_or(0.0);
             }
         };
 
+        // Open the audio device with the SAFE closure-based API — no `unsafe`
+        // required from this call site. `AudioDevice::open` boxes the closure
+        // internally and frees it in `Drop` after the audio device is stopped.
+        let mut audio_device =
+            AudioDevice::open(&config, audio_callback).map_err(|e| format!("AudioDevice::open failed: {}", e))?;
+
         // Start the audio device (begins firing the callback on miniaudio's
         // thread). On failure, `audio_device` is dropped (which calls
-        // `shim_close`) + we free the callback state.
-        let mut audio_device = audio_device;
-        if let Err(e) = audio_device.start() {
-            // `audio_device` dropped here → `shim_close` called.
-            // SAFETY: `callback_ptr` was handed to the device, but the device
-            // is being dropped (stop + close) on this same thread before we
-            // free the state, so no concurrent access.
-            unsafe { drop(Box::from_raw(callback_ptr)) };
-            return Err(e);
-        }
+        // `shim_stop` + `shim_close` + frees the boxed closure).
+        audio_device
+            .start()
+            .map_err(|e| format!("AudioDevice::start failed: {}", e))?;
 
         // Spawn the decoder thread with the decoder-side ring halves.
         let running = Arc::new(AtomicBool::new(true));
@@ -427,7 +406,7 @@ impl StreamingPipeline {
 
         Ok(Self {
             block_size,
-            // Producer/consumer moved into the callback state — calling
+            // Producer/consumer moved into the audio callback — calling
             // `push_input`/`pop_output` on this instance silently drops /
             // returns silence (audio thread is the SPSC counterpart now).
             input_producer: None,
@@ -436,7 +415,6 @@ impl StreamingPipeline {
             decoder_output_producer: None,
             running,
             decoder_thread: Some(decoder),
-            callback_state: Some(callback_ptr),
             audio_device: Some(audio_device),
         })
     }
@@ -444,115 +422,11 @@ impl StreamingPipeline {
 
 impl Drop for StreamingPipeline {
     /// Defensive `Drop`: if the user forgot to call `stop`, signal shutdown
-    /// + stop the audio device + join the decoder thread + free the callback
-    /// state. Safe to call after an explicit `stop` (it's a no-op then — all
-    /// `Option<*mut/_>` fields are `None`).
+    /// + stop the audio device + join the decoder thread. Safe to call
+    /// after an explicit `stop` (it's a no-op then — all `Option<...>`
+    /// fields are `None`).
     fn drop(&mut self) {
         self.stop();
-    }
-}
-
-// ============================================================
-// miniaudio callback (OPT-10): GIL-free raw-pointer trampoline
-// ============================================================
-
-/// State passed to the miniaudio callback via raw `*mut c_void` user_data.
-///
-/// Owns the input ring's `Producer` (audio callback pushes mic capture) + the
-/// output ring's `Consumer` (audio callback pulls speaker playback). The
-/// decoder thread owns the opposite halves, preserving rtrb's SPSC contract.
-///
-/// Lives on the heap (`Box::into_raw` in `start_with_audio`) and is freed in
-/// `StreamingPipeline::stop` after the audio device has been stopped.
-struct AudioCallbackState {
-    input_producer: Producer<f32>,
-    output_consumer: Consumer<f32>,
-    /// Number of audio channels (1 = mono, 2 = stereo). The callback handles
-    /// interleaved multi-channel audio (frame_count × channels samples).
-    channels: u32,
-}
-
-// SAFETY: `AudioCallbackState` is `Send` because both `Producer<f32>` and
-// `Consumer<f32>` are `Send` (rtrb's single-producer/single-consumer
-// contract — only one thread accesses each end). The state lives on
-// miniaudio's audio thread until `stop` stops the device + frees the box.
-// Not `Sync` — only the audio callback thread accesses it once handed off.
-unsafe impl Send for AudioCallbackState {}
-
-/// The GIL-free miniaudio audio callback.
-///
-/// Pushes input samples (mic capture) to the input ring for the decoder
-/// thread to consume, and pulls output samples (speaker playback) from the
-/// output ring that the decoder thread produces. Non-blocking: drops input
-/// samples if the ring is full (decoder hasn't kept up) and emits silence if
-/// the output ring is empty (decoder hasn't caught up / startup underrun).
-///
-/// Supports multi-channel audio (mono or stereo). `frame_count` is the
-/// per-channel frame count, so the total number of f32 samples is
-/// `frame_count * channels`. Audio is pushed/pulled as interleaved samples
-/// (e.g. [L, R, L, R, ...] for stereo) — the decoder thread can use
-/// `deinterleave` / `interleave` (below) if it needs per-channel processing.
-///
-/// # Safety
-///
-/// `user_data` must be a valid pointer to an `AudioCallbackState` that
-/// outlives the audio device (i.e., the device must be stopped before the
-/// state is freed — `StreamingPipeline::stop` guarantees this). `output`
-/// must be valid for `frame_count * channels` f32 writes; `input` must be
-/// valid for `frame_count * channels` f32 reads (miniaudio guarantees both
-/// for the duplex buffers).
-///
-/// Must not panic — runs on miniaudio's audio thread without unwinding.
-extern "C" fn audio_callback(
-    user_data: *mut c_void,
-    output: *mut f32,
-    input: *const f32,
-    frame_count: u32,
-) {
-    // Bail on null user_data (shouldn't happen — `start_with_audio` always
-    // passes a non-null `Box::into_raw` pointer to `AudioDevice::open`).
-    if user_data.is_null() {
-        return;
-    }
-    // SAFETY: caller (`start_with_audio`) guarantees `user_data` is a
-    // `Box::into_raw`-allocated `AudioCallbackState` that outlives the audio
-    // device (freed in `stop` after the device is closed). We take a `&mut`
-    // reference — rtrb 0.4's `Producer::push` and `Consumer::pop` take
-    // `&mut self` (the internal atomics are behind `UnsafeCell`, but rtrb's
-    // API surfaces them as `&mut`). The audio callback is the only thread
-    // that touches this `AudioCallbackState` (SPSC contract), so the
-    // `&mut` is sound — no aliasing.
-    let state = unsafe { &mut *(user_data as *mut AudioCallbackState) };
-
-    // `channels` is configured at `start_with_audio` time from `AudioConfig.channels`
-    // (1 = mono, 2 = stereo). Clamp defensively to ≥1 (the AudioConfig builder
-    // already enforces this, but we don't want a divide-by-zero if a future
-    // code path passes 0).
-    let ch = state.channels.max(1) as usize;
-    // `frame_count` is per-channel frames, so total samples = frame_count * ch.
-    let n = frame_count as usize * ch;
-
-    // Push interleaved input samples to the input ring (non-blocking, drop if
-    // full). The samples are stored interleaved (e.g. [L, R, L, R, ...] for
-    // stereo); the decoder thread can `deinterleave` if it needs planar data.
-    // SAFETY: miniaudio guarantees `input` is valid for `frame_count * ch` f32
-    // samples (the capture buffer for this callback invocation).
-    let input_slice = unsafe { std::slice::from_raw_parts(input, n) };
-    for &s in input_slice {
-        // `Producer::push` returns `Err(PushError::Full(sample))` if the
-        // ring is full — silently drop the sample (typical real-time audio
-        // policy: better to drop input than block the audio thread).
-        let _ = state.input_producer.push(s);
-    }
-
-    // Pull interleaved output samples from the output ring (non-blocking,
-    // silence if empty). The decoder thread should have pushed interleaved
-    // samples (use `interleave` to convert from planar data).
-    // SAFETY: miniaudio guarantees `output` is valid for `frame_count * ch` f32
-    // samples (the playback buffer for this callback invocation).
-    let output_slice = unsafe { std::slice::from_raw_parts_mut(output, n) };
-    for slot in output_slice {
-        *slot = state.output_consumer.pop().unwrap_or(0.0);
     }
 }
 

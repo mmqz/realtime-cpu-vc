@@ -147,11 +147,18 @@ pub struct InferenceSession {
     cached_output_shape: Option<Vec<usize>>,
 }
 
-// `ort::Session` is `Send + Sync` (see ort/src/session/mod.rs:744).
-// `Arc<TypedRunnableModel>` is `Send + Sync` because `TypedRunnableModel`
-// only contains `Arc<...>`-wrapped graph data. Both backends are thread-safe.
-unsafe impl Send for InferenceSession {}
-unsafe impl Sync for InferenceSession {}
+// `ort::Session` is `Send + Sync` (see `ort/src/session/mod.rs:723-724`:
+// `unsafe impl Send for Session {}` / `unsafe impl Sync for Session {}`,
+// with a thorough SAFETY comment justifying both for the ONNXRuntime C
+// API). `IoBinding` is `Send` (see `ort/src/session/io_binding.rs:224`).
+// `Arc<TypedRunnableModel>` is `Send + Sync` because the underlying
+// `SimplePlan` only contains `Arc<...>`-wrapped graph data, plain `Vec`s
+// of `usize`/`OutletId`/`Symbol`, an `Option<Executor>` (enum of
+// `SingleThread` / `Arc<ThreadPool>` / `RayonGlobal` — all Send+Sync),
+// and an `Option<Arc<dyn TurnStateHandler + 'static>>` (the trait is
+// declared `: Send + Sync` at `tract-core/src/plan.rs:186`). Both
+// backends are therefore thread-safe by construction — no `unsafe impl`
+// is required on `InferenceSession`.
 
 impl InferenceSession {
     /// Load an ONNX model from disk. Backend is chosen by the `Backend` enum.

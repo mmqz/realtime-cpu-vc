@@ -12,11 +12,12 @@
 
 // miniaudio FFI + safe wrapper (compiled from src_c/miniaudio/miniaudio.c
 // + miniaudio_shim.c via build.rs). Provides `AudioDevice` (RAII handle for
-// the C-side `ma_device`) and `MaDataCallback` (GIL-free audio callback
-// signature). See `miniaudio_ffi.rs` for the design rationale (C shim
-// instead of direct 1:1 FFI over the multi-KB miniaudio structs).
+// the C-side `ma_device`) with a safe closure-based `open` API — no
+// `unsafe extern "C" fn` is exposed publicly. See `miniaudio_ffi.rs` for
+// the design rationale (C shim instead of direct 1:1 FFI over the
+// multi-KB miniaudio structs).
 mod miniaudio_ffi;
-pub use miniaudio_ffi::{AudioDevice, MaDataCallback};
+pub use miniaudio_ffi::AudioDevice;
 
 // STFT + cached mel filter bank (OPT-3): Rust replacement for librosa on the
 // streaming path. `realfft` (R2C FFT) + cached Slaney mel triangles → ~1-2ms
