@@ -17,7 +17,6 @@ Verifies that ``models/encoder.onnx`` (FP32) and ``models/encoder.int8.onnx``
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np

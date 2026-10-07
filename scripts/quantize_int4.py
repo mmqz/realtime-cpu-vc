@@ -127,7 +127,7 @@ def quantize_int4(
     """
     print(f"\n[quantize] {fp32_path.name} -> {int4_path.name}")
     print(f"  block_size      : {block_size}")
-    print(f"  weight_type     : QInt4")
+    print("  weight_type     : QInt4")
     print(f"  op_types        : {OP_TYPES_TO_QUANTIZE}")
     print(f"  int8_fallback   : {int8_fallback}")
 

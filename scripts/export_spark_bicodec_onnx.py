@@ -588,7 +588,7 @@ def _parity_check_v2(se_path: Path, bicodec: BiCodec) -> None:
           f"  max|Δ| = {d_diff:.2e}")
     print(f"      fsq_indices : torch {idx_torch.shape} vs onnx {idx_onnx.shape}"
           f"  match {idx_match}/{idx_total}")
-    print(f"      (x_vector  : SKIPPED — not in v2 ONNX graph)")
+    print("      (x_vector  : SKIPPED — not in v2 ONNX graph)")
 
     # Same bar as v1's d_vector + fsq_indices.
     assert d_diff < 1e-3, f"v2 d_vector parity exceeded 1e-3: {d_diff}"

@@ -1,4 +1,5 @@
 """
+from typing import Any
 vc_realtime.infer_v2 — v2 hybrid inference (Option A: minimal integration).
 
 Architecture (verified shapes)
@@ -260,7 +261,7 @@ class V2Infer(V1Infer):
         n_fft: int = OPENVOICE_N_FFT,
         hop: int = OPENVOICE_HOP,
         win: int = OPENVOICE_WIN,
-    ) -> np.ndarray:
+    ) -> np.ndarray[Any, np.dtype[Any]]:
         """Compute the LINEAR spectrogram the OpenVoice RefEncoder expects.
 
         The OpenVoice v2 ReferenceEncoder takes the magnitude linear-spec
@@ -285,7 +286,7 @@ class V2Infer(V1Infer):
         # ONNX expects time-first: [B, T, 513]
         return mag.T[None, ...]
 
-    def encode_openvoice_embedding(self, wav_22k: np.ndarray) -> np.ndarray:
+    def encode_openvoice_embedding(self, wav_22k: np.ndarray) -> np.ndarray[Any, np.dtype[Any]]:
         """Run the OpenVoice ReferenceEncoder ONNX on a 22.05 kHz wav.
 
         Used OFFLINE during voice registration (not at runtime).
@@ -317,7 +318,7 @@ class V2Infer(V1Infer):
     # ------------------------------------------------------------------
     def register_voice(
         self, wav_path: str | Path, voice_id: int, persist: bool = True
-    ) -> np.ndarray:
+    ) -> np.ndarray[Any, np.dtype[Any]]:
         """OFFLINE: encode a 30 s voice reference wav to a 256-d OpenVoice
         embedding and persist it to ``models/voices_v2.safetensors``.
 
@@ -408,7 +409,7 @@ class V2Infer(V1Infer):
 _default_infer: V2Infer | None = None
 
 
-def process_audio(wav: np.ndarray, sr: int, voice_id: int = 0) -> np.ndarray:
+def process_audio(wav: np.ndarray, sr: int, voice_id: int = 0) -> np.ndarray[Any, np.dtype[Any]]:
     """Module-level shortcut using a cached singleton V2Infer.
 
     Used by `scripts/benchmark.py` and `scripts/realtime_infer.py` so they
