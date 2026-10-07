@@ -403,7 +403,30 @@ class V1Infer:
         responsibility). Shared by :meth:`process_audio` (single shot) and
         :meth:`process_audio_chunked` (chunked, so PyTorch does not cache
         large intermediate tensors for long inputs).
+
+        Edge cases handled
+        ------------------
+        * Empty input (``wav.size == 0``) → empty float32 output (no-op).
+        * Too-short input (``< n_fft`` samples = 80 ms) → zero-padded to
+          ``n_fft`` before encoding (the encoder STFT requires at least
+          ``n_fft`` samples for its centered reflect-padding), then the
+          output is trimmed back to the original input length so the
+          caller sees a length-preserving transform.
         """
+        if wav.size == 0:
+            # Empty input → empty output (length-preserving no-op).
+            return np.zeros(0, dtype=np.float32)
+
+        original_len = int(wav.size)
+        # The encoder's centered STFT uses reflect-padding of
+        # ``n_fft // 2`` on each side; reflect-pad requires the input
+        # length to exceed the pad size. Pad with zeros to ``n_fft`` so
+        # the STFT can run on inputs shorter than 80 ms (1 sample,
+        # 100 samples, etc.).
+        n_fft = int(getattr(self.encoder, "n_fft", N_FFT))
+        if original_len < n_fft:
+            wav = np.pad(wav, (0, n_fft - original_len), mode="constant")
+
         content, f0, energy = self.encode(wav)
 
         # Optional pitch shift (default 0 semitones — identity)
@@ -414,17 +437,55 @@ class V1Infer:
 
         content_replaced = self.knn_replace(content, voice_id)
         out = self.decode(content_replaced, f0, energy)
+
+        # Length-preserving trim/pad so the caller sees the same number of
+        # samples they passed in (post-resample). Without this, a 1-sample
+        # input would be padded to ``n_fft`` and the caller would receive
+        # ``n_fft`` samples back, surprising the test harness / streaming
+        # shell that expects length-preserving transforms.
+        if out.size > original_len:
+            out = out[:original_len]
+        elif out.size < original_len:
+            out = np.pad(out, (0, original_len - out.size), mode="constant")
         return out
 
     @staticmethod
     def _preprocess(wav: np.ndarray, sr: int) -> np.ndarray:
-        """Resample → mono mixdown → peak-normalize to -3 dBFS.
+        """Resample → mono mixdown → sanitize → peak-normalize to -3 dBFS.
 
         Returns 24 kHz mono float32 with peak = 10**(-3/20) ≈ 0.7079.
+
+        Edge cases
+        ----------
+        * Empty input → empty float32 output (length-preserving no-op; the
+          downstream :meth:`_run_pipeline` short-circuits on empty input).
+        * NaN/Inf samples → replaced with 0 and a ``RuntimeWarning`` is
+          emitted. Without sanitization, NaN/Inf propagate through the
+          encoder/decoder and produce NaN output (cosine kNN is undefined
+          on NaN features; DDSP oscillator phase is undefined on Inf).
+        * All-zero input → peak is floored at ``1e-8`` so the divide-by-zero
+          doesn't produce NaN; the result is still all-zero (multiplied by
+          ``0.7079 / 1e-8 ≈ 7e7`` then 0). The 1e-8 floor also keeps
+          near-silent input (e.g. ``1e-10``) from being amplified to
+          numerical garbage.
         """
         wav = np.asarray(wav, dtype=np.float32)
         if wav.ndim == 2:
             wav = wav.mean(axis=1)  # stereo → mono
+        if wav.size == 0:
+            return wav  # empty → empty (no further processing possible)
+        # Sanitize NaN/Inf before any math (prevents NaN propagation).
+        if not np.all(np.isfinite(wav)):
+            import warnings
+
+            n_bad = int(np.sum(~np.isfinite(wav)))
+            warnings.warn(
+                f"Input audio contains {n_bad} non-finite (NaN/Inf) sample(s); "
+                f"replacing with 0 before processing.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            wav = np.where(np.isfinite(wav), wav, np.float32(0.0))
         if sr != SAMPLE_RATE:
             if not _HAS_LIBROSA:
                 raise RuntimeError(
@@ -432,8 +493,13 @@ class V1Infer:
                     f"resample. Install librosa or feed 24 kHz audio."
                 )
             wav = librosa.resample(wav, orig_sr=sr, target_sr=SAMPLE_RATE)
-        # peak normalize to -3 dBFS (matches TinyVC's infer.py convention)
-        peak = float(np.max(np.abs(wav))) + 1e-8
+        # Peak-normalize to -3 dBFS (matches TinyVC's infer.py convention).
+        # ``max(peak, 1e-8)`` floors the divisor to avoid divide-by-zero on
+        # silent input (the previous ``peak + 1e-8`` was incorrect: for a
+        # near-zero peak (e.g. 1e-10) it amplified by 0.7079/1e-8 = 7e7,
+        # producing numerical garbage; for a large peak it had no effect).
+        peak = float(np.max(np.abs(wav)))
+        peak = max(peak, 1e-8)
         wav = wav * (10 ** (DEFAULT_NORM_DB / 20.0) / peak)
         return wav
 

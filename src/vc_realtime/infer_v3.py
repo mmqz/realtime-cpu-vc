@@ -67,7 +67,8 @@ from vc_realtime.infer_v1 import (  # noqa: E402
 from vc_realtime.speaker_encoder_v3 import (  # noqa: E402
     SPARK_HOP,  # noqa: E402
     SPARK_N_FFT,  # noqa: E402
-    SPARK_N_MELS,  # noqa: E402
+    SPARK_N_MELS,  # noqa: E402,F401
+    SPARK_OUT_DIM,  # noqa: E402,F401  re-exported for tests/test_infer_v3.py
     SPARK_REF_DURATION_S,  # noqa: E402
     SPARK_SAMPLE_RATE,  # noqa: E402
     pack_fsq_to_48_bytes,  # noqa: E402
@@ -347,8 +348,26 @@ class V3Infer(V1Infer):
         max_samples = int(SPARK_SAMPLE_RATE * SPARK_REF_DURATION_S)
         if len(wav) > max_samples:
             wav = wav[:max_samples]
-        # Peak-normalize to -3 dBFS
-        peak = float(np.max(np.abs(wav))) + 1e-8
+        # Sanitize NaN/Inf before peak normalization (prevents NaN
+        # propagation through the Spark SpeakerEncoder).
+        if wav.size > 0 and not np.all(np.isfinite(wav)):
+            import warnings
+
+            n_bad = int(np.sum(~np.isfinite(wav)))
+            warnings.warn(
+                f"register_voice: reference wav contains {n_bad} non-finite "
+                f"sample(s); replacing with 0.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            wav = np.where(np.isfinite(wav), wav, np.float32(0.0))
+        # Peak-normalize to -3 dBFS. ``max(peak, 1e-8)`` floors the divisor
+        # to avoid divide-by-zero on silent input (the previous
+        # ``peak + 1e-8`` was a numerical bug — see V1Infer._preprocess).
+        if wav.size == 0:
+            raise ValueError("Reference wav is empty; cannot register voice.")
+        peak = float(np.max(np.abs(wav)))
+        peak = max(peak, 1e-8)
         wav = wav * (10 ** (DEFAULT_NORM_DB / 20.0) / peak)
         # Encode
         d_vector, fsq_bytes, x_vector = self.encode_spark_embedding(wav)

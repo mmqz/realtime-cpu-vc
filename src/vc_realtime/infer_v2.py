@@ -352,8 +352,26 @@ class V2Infer(V1Infer):
         max_samples = int(OPENVOICE_SAMPLE_RATE * OPENVOICE_REF_DURATION_S)
         if len(wav) > max_samples:
             wav = wav[:max_samples]
-        # Peak-normalize to -3 dBFS
-        peak = float(np.max(np.abs(wav))) + 1e-8
+        # Sanitize NaN/Inf before peak normalization (prevents NaN
+        # propagation through the ReferenceEncoder GRU).
+        if wav.size > 0 and not np.all(np.isfinite(wav)):
+            import warnings
+
+            n_bad = int(np.sum(~np.isfinite(wav)))
+            warnings.warn(
+                f"register_voice: reference wav contains {n_bad} non-finite "
+                f"sample(s); replacing with 0.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            wav = np.where(np.isfinite(wav), wav, np.float32(0.0))
+        # Peak-normalize to -3 dBFS. ``max(peak, 1e-8)`` floors the divisor
+        # to avoid divide-by-zero on silent input (the previous
+        # ``peak + 1e-8`` was a numerical bug — see V1Infer._preprocess).
+        if wav.size == 0:
+            raise ValueError("Reference wav is empty; cannot register voice.")
+        peak = float(np.max(np.abs(wav)))
+        peak = max(peak, 1e-8)
         wav = wav * (10 ** (DEFAULT_NORM_DB / 20.0) / peak)
         # Encode
         emb = self.encode_openvoice_embedding(wav)
