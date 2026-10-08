@@ -1,0 +1,441 @@
+{
+  "config": {
+    "n_fft": 1920,
+    "hop": 480,
+    "chunk_frames": 4,
+    "chunk_samples": 1920,
+    "acceptance_threshold_pct": 5.0
+  },
+  "results": [
+    {
+      "name": "voice_0",
+      "duration_s": 30.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          1500
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          377
+        ],
+        "T_compared": 377,
+        "max_abs_diff": 164.15829467773438,
+        "mean_abs_diff": 0.4342502951622009,
+        "offline_max": 200.27444458007812,
+        "relative_max_diff_pct": 81.96666717529297,
+        "relative_mean_diff_pct": 166.5325164794922
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 1500,
+        "mean_rel_shift_per_channel_mean": 4.272310733795166,
+        "mean_rel_shift_per_channel_max": 408.6527404785156,
+        "std_rel_shift_per_channel_mean": 0.2237575650215149,
+        "std_rel_shift_per_channel_max": 1.8540949821472168,
+        "shift_overall_mean": 4.272310733795166,
+        "shift_overall_max": 408.6527404785156
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 377,
+        "mean_rel_shift_per_channel_mean": 4.37012243270874,
+        "mean_rel_shift_per_channel_max": 737.2634887695312,
+        "std_rel_shift_per_channel_mean": 0.18014764785766602,
+        "std_rel_shift_per_channel_max": 1.4588875770568848,
+        "shift_overall_mean": 4.37012243270874,
+        "shift_overall_max": 737.2634887695312
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "voice_1",
+      "duration_s": 30.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          1500
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          377
+        ],
+        "T_compared": 377,
+        "max_abs_diff": 98.87230682373047,
+        "mean_abs_diff": 0.3429684638977051,
+        "offline_max": 98.93526458740234,
+        "relative_max_diff_pct": 99.93636322021484,
+        "relative_mean_diff_pct": 148.2514190673828
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 1500,
+        "mean_rel_shift_per_channel_mean": 5.6132378578186035,
+        "mean_rel_shift_per_channel_max": 520.7875366210938,
+        "std_rel_shift_per_channel_mean": 0.28372177481651306,
+        "std_rel_shift_per_channel_max": 2.3597562313079834,
+        "shift_overall_mean": 5.6132378578186035,
+        "shift_overall_max": 520.7875366210938
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 377,
+        "mean_rel_shift_per_channel_mean": 4.419696807861328,
+        "mean_rel_shift_per_channel_max": 560.2089233398438,
+        "std_rel_shift_per_channel_mean": 0.27987876534461975,
+        "std_rel_shift_per_channel_max": 2.550048589706421,
+        "shift_overall_mean": 4.419696807861328,
+        "shift_overall_max": 560.2089233398438
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "voice_2",
+      "duration_s": 30.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          1500
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          377
+        ],
+        "T_compared": 377,
+        "max_abs_diff": 117.95524597167969,
+        "mean_abs_diff": 0.30121833086013794,
+        "offline_max": 153.2803497314453,
+        "relative_max_diff_pct": 76.95392608642578,
+        "relative_mean_diff_pct": 143.0817413330078
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 1500,
+        "mean_rel_shift_per_channel_mean": 3.929638624191284,
+        "mean_rel_shift_per_channel_max": 177.68394470214844,
+        "std_rel_shift_per_channel_mean": 0.26622095704078674,
+        "std_rel_shift_per_channel_max": 2.316147565841675,
+        "shift_overall_mean": 3.929638624191284,
+        "shift_overall_max": 177.68394470214844
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 377,
+        "mean_rel_shift_per_channel_mean": 2.9994232654571533,
+        "mean_rel_shift_per_channel_max": 134.36221313476562,
+        "std_rel_shift_per_channel_mean": 0.2209191471338272,
+        "std_rel_shift_per_channel_max": 1.9877946376800537,
+        "shift_overall_mean": 2.9994232654571533,
+        "shift_overall_max": 134.36221313476562
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "voice_3",
+      "duration_s": 30.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          1500
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          377
+        ],
+        "T_compared": 377,
+        "max_abs_diff": 142.195556640625,
+        "mean_abs_diff": 0.3263271749019623,
+        "offline_max": 147.83665466308594,
+        "relative_max_diff_pct": 96.18423461914062,
+        "relative_mean_diff_pct": 162.08584594726562
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 1500,
+        "mean_rel_shift_per_channel_mean": 5.382890224456787,
+        "mean_rel_shift_per_channel_max": 1023.0859985351562,
+        "std_rel_shift_per_channel_mean": 0.251388281583786,
+        "std_rel_shift_per_channel_max": 2.078819990158081,
+        "shift_overall_mean": 5.382890224456787,
+        "shift_overall_max": 1023.0859985351562
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 377,
+        "mean_rel_shift_per_channel_mean": 2.994152069091797,
+        "mean_rel_shift_per_channel_max": 94.04827880859375,
+        "std_rel_shift_per_channel_mean": 0.23343408107757568,
+        "std_rel_shift_per_channel_max": 2.1812937259674072,
+        "shift_overall_mean": 2.994152069091797,
+        "shift_overall_max": 94.04827880859375
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "voice_4",
+      "duration_s": 30.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          1500
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          377
+        ],
+        "T_compared": 377,
+        "max_abs_diff": 110.10372924804688,
+        "mean_abs_diff": 0.4363025724887848,
+        "offline_max": 110.51411437988281,
+        "relative_max_diff_pct": 99.62865447998047,
+        "relative_mean_diff_pct": 166.138916015625
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 1500,
+        "mean_rel_shift_per_channel_mean": 5.869771480560303,
+        "mean_rel_shift_per_channel_max": 869.9934692382812,
+        "std_rel_shift_per_channel_mean": 0.21544362604618073,
+        "std_rel_shift_per_channel_max": 1.3795322179794312,
+        "shift_overall_mean": 5.869771480560303,
+        "shift_overall_max": 869.9934692382812
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 377,
+        "mean_rel_shift_per_channel_mean": 1096.688720703125,
+        "mean_rel_shift_per_channel_max": 839838.25,
+        "std_rel_shift_per_channel_mean": 0.16504432260990143,
+        "std_rel_shift_per_channel_max": 0.6745922565460205,
+        "shift_overall_mean": 1096.688720703125,
+        "shift_overall_max": 839838.25
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "source_001",
+      "duration_s": 5.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          250
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          65
+        ],
+        "T_compared": 65,
+        "max_abs_diff": 147.6413116455078,
+        "mean_abs_diff": 0.4302656948566437,
+        "offline_max": 147.6413116455078,
+        "relative_max_diff_pct": 100.0,
+        "relative_mean_diff_pct": 218.443603515625
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 250,
+        "mean_rel_shift_per_channel_mean": 1.7128130197525024,
+        "mean_rel_shift_per_channel_max": 48.7778205871582,
+        "std_rel_shift_per_channel_mean": 0.3450377881526947,
+        "std_rel_shift_per_channel_max": 2.0042612552642822,
+        "shift_overall_mean": 1.7128130197525024,
+        "shift_overall_max": 48.7778205871582
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 65,
+        "mean_rel_shift_per_channel_mean": 2.2371084690093994,
+        "mean_rel_shift_per_channel_max": 171.97755432128906,
+        "std_rel_shift_per_channel_mean": 0.2888967990875244,
+        "std_rel_shift_per_channel_max": 1.7647467851638794,
+        "shift_overall_mean": 2.2371084690093994,
+        "shift_overall_max": 171.97755432128906
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "source_002",
+      "duration_s": 5.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          250
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          65
+        ],
+        "T_compared": 65,
+        "max_abs_diff": 171.21372985839844,
+        "mean_abs_diff": 0.44708940386772156,
+        "offline_max": 171.21372985839844,
+        "relative_max_diff_pct": 100.0,
+        "relative_mean_diff_pct": 218.9938507080078
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 250,
+        "mean_rel_shift_per_channel_mean": 2.1546905040740967,
+        "mean_rel_shift_per_channel_max": 102.81204223632812,
+        "std_rel_shift_per_channel_mean": 0.3940962851047516,
+        "std_rel_shift_per_channel_max": 2.923764944076538,
+        "shift_overall_mean": 2.1546905040740967,
+        "shift_overall_max": 102.81204223632812
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 65,
+        "mean_rel_shift_per_channel_mean": 5.877912521362305,
+        "mean_rel_shift_per_channel_max": 1897.023193359375,
+        "std_rel_shift_per_channel_mean": 0.31118717789649963,
+        "std_rel_shift_per_channel_max": 3.0682830810546875,
+        "shift_overall_mean": 5.877912521362305,
+        "shift_overall_max": 1897.023193359375
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "source_003",
+      "duration_s": 5.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          250
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          65
+        ],
+        "T_compared": 65,
+        "max_abs_diff": 144.9510955810547,
+        "mean_abs_diff": 0.6633169054985046,
+        "offline_max": 144.9510955810547,
+        "relative_max_diff_pct": 100.0,
+        "relative_mean_diff_pct": 184.62904357910156
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 250,
+        "mean_rel_shift_per_channel_mean": 4.630363941192627,
+        "mean_rel_shift_per_channel_max": 1587.173828125,
+        "std_rel_shift_per_channel_mean": 0.32110992074012756,
+        "std_rel_shift_per_channel_max": 1.6953221559524536,
+        "shift_overall_mean": 4.630363941192627,
+        "shift_overall_max": 1587.173828125
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 65,
+        "mean_rel_shift_per_channel_mean": 16.141599655151367,
+        "mean_rel_shift_per_channel_max": 10542.2861328125,
+        "std_rel_shift_per_channel_mean": 0.23299412429332733,
+        "std_rel_shift_per_channel_max": 1.845700740814209,
+        "shift_overall_mean": 16.141599655151367,
+        "shift_overall_max": 10542.2861328125
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "source_004",
+      "duration_s": 5.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          250
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          65
+        ],
+        "T_compared": 65,
+        "max_abs_diff": 132.00457763671875,
+        "mean_abs_diff": 0.6822975873947144,
+        "offline_max": 132.00457763671875,
+        "relative_max_diff_pct": 100.0,
+        "relative_mean_diff_pct": 188.44122314453125
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 250,
+        "mean_rel_shift_per_channel_mean": 5.434028625488281,
+        "mean_rel_shift_per_channel_max": 1044.7259521484375,
+        "std_rel_shift_per_channel_mean": 0.3584352731704712,
+        "std_rel_shift_per_channel_max": 3.6480445861816406,
+        "shift_overall_mean": 5.434028625488281,
+        "shift_overall_max": 1044.7259521484375
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 65,
+        "mean_rel_shift_per_channel_mean": 5.379472255706787,
+        "mean_rel_shift_per_channel_max": 1213.2725830078125,
+        "std_rel_shift_per_channel_mean": 0.28164002299308777,
+        "std_rel_shift_per_channel_max": 3.494947671890259,
+        "shift_overall_mean": 5.379472255706787,
+        "shift_overall_max": 1213.2725830078125
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    },
+    {
+      "name": "source_005",
+      "duration_s": 5.0,
+      "stft_verify": {
+        "offline_shape": [
+          1,
+          961,
+          250
+        ],
+        "streaming_shape": [
+          1,
+          961,
+          65
+        ],
+        "T_compared": 65,
+        "max_abs_diff": 128.50465393066406,
+        "mean_abs_diff": 0.5188490152359009,
+        "offline_max": 134.01515197753906,
+        "relative_max_diff_pct": 95.88815307617188,
+        "relative_mean_diff_pct": 112.30682373046875
+      },
+      "shift_naive_chunked_80ms": {
+        "n_frames_compared": 250,
+        "mean_rel_shift_per_channel_mean": 5.688045024871826,
+        "mean_rel_shift_per_channel_max": 366.78558349609375,
+        "std_rel_shift_per_channel_mean": 0.23927025496959686,
+        "std_rel_shift_per_channel_max": 0.8184123635292053,
+        "shift_overall_mean": 5.688045024871826,
+        "shift_overall_max": 366.78558349609375
+      },
+      "shift_streaming_stft_80ms": {
+        "n_frames_compared": 65,
+        "mean_rel_shift_per_channel_mean": 10.450661659240723,
+        "mean_rel_shift_per_channel_max": 3861.12353515625,
+        "std_rel_shift_per_channel_mean": 0.19623486697673798,
+        "std_rel_shift_per_channel_max": 1.0506260395050049,
+        "shift_overall_mean": 10.450661659240723,
+        "shift_overall_max": 3861.12353515625
+      },
+      "pass_naive": false,
+      "pass_streaming": false
+    }
+  ],
+  "summary": {
+    "n_wavs": 10,
+    "n_pass_naive": 0,
+    "n_pass_streaming_stft": 0,
+    "overall_naive_pass": false,
+    "overall_streaming_pass": false,
+    "avg_stft_max_relative_diff_pct": 95.05579986572266,
+    "mean_shift_naive_pct": 446.8779003620147,
+    "mean_shift_streaming_pct": 11515.588698387146
+  }
+}
