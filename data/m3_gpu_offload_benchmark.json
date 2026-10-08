@@ -1,0 +1,55 @@
+{
+  "config": {
+    "device": "cpu",
+    "torch_version": "2.14.1+cpu",
+    "cuda_available": false,
+    "n_runs": 3,
+    "source": "data/source/source_005.wav"
+  },
+  "per_run": [
+    {
+      "encode_ms": 60.1819420000993,
+      "knn_ms": 11.965845000077024,
+      "decode_ms": 314.8045220000313,
+      "total_ms": 386.9523090002076,
+      "out_duration_s": 5.0,
+      "wall_ms": 386.9972320001125,
+      "rtf": 0.0773994464000225
+    },
+    {
+      "encode_ms": 25.735402000009344,
+      "knn_ms": 36.7507050000313,
+      "decode_ms": 263.5416289999739,
+      "total_ms": 326.02773600001456,
+      "out_duration_s": 5.0,
+      "wall_ms": 326.06780400010393,
+      "rtf": 0.06521356080002079
+    },
+    {
+      "encode_ms": 51.91199599994434,
+      "knn_ms": 9.006443999851399,
+      "decode_ms": 281.83113700015383,
+      "total_ms": 342.74957699994957,
+      "out_duration_s": 5.0,
+      "wall_ms": 342.77847399994243,
+      "rtf": 0.06855569479998849
+    }
+  ],
+  "averages": {
+    "encode_ms": 45.94311333335099,
+    "knn_ms": 19.240997999986575,
+    "decode_ms": 286.7257626667197,
+    "total_ms": 351.90987400005724,
+    "wall_ms": 351.94783666671964,
+    "rtf": 0.07038956733334392,
+    "out_duration_s": 5.0
+  },
+  "projected_cuda": {
+    "encode_ms": 7.657185555558499,
+    "knn_ms": 19.240997999986575,
+    "decode_ms": 71.68144066667992,
+    "sola_chunk_align_ms": 80,
+    "total_p50_ms": 178.579624222225,
+    "target_p50_ms": 250
+  }
+}
