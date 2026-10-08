@@ -103,3 +103,6 @@ Thumbs.db
 
 # No PDFs — only Markdown in docs/
 *.pdf
+
+# Persistent issue: scripts/vendor_c_deps.sh re-clones src_c/ggml
+src_c/ggml/
