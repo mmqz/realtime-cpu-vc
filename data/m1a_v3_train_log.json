@@ -1,0 +1,28 @@
+{
+  "epochs": [
+    {
+      "epoch": 0,
+      "loss_mel_mse": 0.6141835488379002,
+      "elapsed_s": 85.02845699599993
+    },
+    {
+      "epoch": 1,
+      "loss_mel_mse": 0.5540969699621201,
+      "elapsed_s": 164.33780372099977
+    },
+    {
+      "epoch": 2,
+      "loss_mel_mse": 0.5264244697988033,
+      "elapsed_s": 245.47628162299975
+    }
+  ],
+  "config": {
+    "epochs": 3,
+    "lr": 0.001,
+    "n_pairs": 80,
+    "n_voices": 5,
+    "loss": "mel-spec MSE",
+    "architecture": "V2 (FiLM@768) + audio-level mel-spec loss"
+  },
+  "total_seconds": 245.476325762
+}
