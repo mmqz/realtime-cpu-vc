@@ -1,0 +1,872 @@
+{
+  "source": "data/source/source_001.wav",
+  "grid": {
+    "top_k": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "alpha": [
+      0.0,
+      0.1,
+      0.3,
+      0.5
+    ]
+  },
+  "results": [
+    {
+      "top_k": 1,
+      "alpha": 0.0,
+      "mean_vc_effect": 0.12994708865880966,
+      "delta_vs_m05": 0.12894708865880966,
+      "delta_vs_m1b_baseline": -0.0010529113411903435,
+      "cross_gender_mean": 0.03942980244755745,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.4053432047367096,
+          "source_sim": 0.18581226468086243,
+          "vc_effect": 0.21953094005584717,
+          "decode_time_ms": 324.97379499977797
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4553965926170349,
+          "source_sim": 0.23010201752185822,
+          "vc_effect": 0.2252945750951767,
+          "decode_time_ms": 229.34452300000885
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.4156583845615387,
+          "source_sim": 0.28960806131362915,
+          "vc_effect": 0.12605032324790955,
+          "decode_time_ms": 225.93426000003092
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.1530693918466568,
+          "source_sim": 0.13360576331615448,
+          "vc_effect": 0.01946362853050232,
+          "decode_time_ms": 225.9478409998792
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.1316182166337967,
+          "source_sim": 0.07222224026918411,
+          "vc_effect": 0.05939597636461258,
+          "decode_time_ms": 225.22608199983551
+        }
+      ]
+    },
+    {
+      "top_k": 1,
+      "alpha": 0.1,
+      "mean_vc_effect": 0.08712802231311798,
+      "delta_vs_m05": 0.08612802231311797,
+      "delta_vs_m1b_baseline": -0.04387197768688203,
+      "cross_gender_mean": -0.0049676671624183655,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.38110223412513733,
+          "source_sim": 0.19013714790344238,
+          "vc_effect": 0.19096508622169495,
+          "decode_time_ms": 225.329180000017
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.41584014892578125,
+          "source_sim": 0.2660825252532959,
+          "vc_effect": 0.14975762367248535,
+          "decode_time_ms": 232.05212299990308
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.4213939309120178,
+          "source_sim": 0.3165411949157715,
+          "vc_effect": 0.10485273599624634,
+          "decode_time_ms": 226.69420200008972
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.12977151572704315,
+          "source_sim": 0.1609210968017578,
+          "vc_effect": -0.03114958107471466,
+          "decode_time_ms": 229.14973000001737
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.11844023317098618,
+          "source_sim": 0.09722598642110825,
+          "vc_effect": 0.02121424674987793,
+          "decode_time_ms": 232.78566900012265
+        }
+      ]
+    },
+    {
+      "top_k": 1,
+      "alpha": 0.3,
+      "mean_vc_effect": 0.040822969377040864,
+      "delta_vs_m05": 0.039822969377040864,
+      "delta_vs_m1b_baseline": -0.09017703062295915,
+      "cross_gender_mean": -0.022463414818048477,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.3585811257362366,
+          "source_sim": 0.25916150212287903,
+          "vc_effect": 0.09941962361335754,
+          "decode_time_ms": 228.5782429999017
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4269886016845703,
+          "source_sim": 0.2857150733470917,
+          "vc_effect": 0.14127352833747864,
+          "decode_time_ms": 227.94286100020145
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.34733325242996216,
+          "source_sim": 0.33898472785949707,
+          "vc_effect": 0.008348524570465088,
+          "decode_time_ms": 227.97767500014743
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.100768081843853,
+          "source_sim": 0.15676118433475494,
+          "vc_effect": -0.05599310249090195,
+          "decode_time_ms": 229.81731100003344
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.16012156009674072,
+          "source_sim": 0.14905528724193573,
+          "vc_effect": 0.011066272854804993,
+          "decode_time_ms": 225.79347800001415
+        }
+      ]
+    },
+    {
+      "top_k": 1,
+      "alpha": 0.5,
+      "mean_vc_effect": 0.01455097496509552,
+      "delta_vs_m05": 0.013550974965095521,
+      "delta_vs_m1b_baseline": -0.11644902503490448,
+      "cross_gender_mean": -0.05437316745519638,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.32771116495132446,
+          "source_sim": 0.28037166595458984,
+          "vc_effect": 0.04733949899673462,
+          "decode_time_ms": 225.57042299990826
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.42789337038993835,
+          "source_sim": 0.34546688199043274,
+          "vc_effect": 0.08242648839950562,
+          "decode_time_ms": 229.26600900018457
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3516424000263214,
+          "source_sim": 0.2999071776866913,
+          "vc_effect": 0.05173522233963013,
+          "decode_time_ms": 225.0592749999214
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.13306230306625366,
+          "source_sim": 0.18889062106609344,
+          "vc_effect": -0.05582831799983978,
+          "decode_time_ms": 225.92970799996692
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.12591789662837982,
+          "source_sim": 0.1788359135389328,
+          "vc_effect": -0.05291801691055298,
+          "decode_time_ms": 221.63346999991518
+        }
+      ]
+    },
+    {
+      "top_k": 4,
+      "alpha": 0.0,
+      "mean_vc_effect": 0.12017100602388382,
+      "delta_vs_m05": 0.11917100602388382,
+      "delta_vs_m1b_baseline": -0.010828993976116183,
+      "cross_gender_mean": 0.05259663239121437,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.4337396025657654,
+          "source_sim": 0.1967114508152008,
+          "vc_effect": 0.23702815175056458,
+          "decode_time_ms": 223.65620300001865
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.3947707712650299,
+          "source_sim": 0.28349190950393677,
+          "vc_effect": 0.11127886176109314,
+          "decode_time_ms": 222.31853599987517
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.38866254687309265,
+          "source_sim": 0.24130779504776,
+          "vc_effect": 0.14735475182533264,
+          "decode_time_ms": 224.249570999973
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.15223652124404907,
+          "source_sim": 0.13196463882923126,
+          "vc_effect": 0.02027188241481781,
+          "decode_time_ms": 230.24848699992617
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.19197969138622284,
+          "source_sim": 0.10705830901861191,
+          "vc_effect": 0.08492138236761093,
+          "decode_time_ms": 220.16952700005277
+        }
+      ]
+    },
+    {
+      "top_k": 4,
+      "alpha": 0.1,
+      "mean_vc_effect": 0.10279666036367416,
+      "delta_vs_m05": 0.10179666036367416,
+      "delta_vs_m1b_baseline": -0.028203339636325847,
+      "cross_gender_mean": 0.01681138202548027,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.4230974614620209,
+          "source_sim": 0.18625637888908386,
+          "vc_effect": 0.236841082572937,
+          "decode_time_ms": 224.3053439999585
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.3589251637458801,
+          "source_sim": 0.2582464814186096,
+          "vc_effect": 0.10067868232727051,
+          "decode_time_ms": 224.52462799992645
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.43362095952033997,
+          "source_sim": 0.2907801866531372,
+          "vc_effect": 0.14284077286720276,
+          "decode_time_ms": 220.74378999991495
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.13167068362236023,
+          "source_sim": 0.1498260498046875,
+          "vc_effect": -0.01815536618232727,
+          "decode_time_ms": 219.0417089998391
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.1448531448841095,
+          "source_sim": 0.09307501465082169,
+          "vc_effect": 0.05177813023328781,
+          "decode_time_ms": 225.49172300000464
+        }
+      ]
+    },
+    {
+      "top_k": 4,
+      "alpha": 0.3,
+      "mean_vc_effect": 0.07138489335775375,
+      "delta_vs_m05": 0.07038489335775375,
+      "delta_vs_m1b_baseline": -0.05961510664224626,
+      "cross_gender_mean": 0.006035920232534409,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.3807949423789978,
+          "source_sim": 0.21683794260025024,
+          "vc_effect": 0.16395699977874756,
+          "decode_time_ms": 221.7178910000257
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4137827754020691,
+          "source_sim": 0.289618581533432,
+          "vc_effect": 0.12416419386863708,
+          "decode_time_ms": 223.1495820001328
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3425275385379791,
+          "source_sim": 0.2857961058616638,
+          "vc_effect": 0.05673143267631531,
+          "decode_time_ms": 224.14775100014594
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.13827835023403168,
+          "source_sim": 0.16123591363430023,
+          "vc_effect": -0.022957563400268555,
+          "decode_time_ms": 221.2624539999979
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.1361575871706009,
+          "source_sim": 0.10112818330526352,
+          "vc_effect": 0.03502940386533737,
+          "decode_time_ms": 223.01602099992124
+        }
+      ]
+    },
+    {
+      "top_k": 4,
+      "alpha": 0.5,
+      "mean_vc_effect": -0.0015612855553627015,
+      "delta_vs_m05": -0.0025612855553627015,
+      "delta_vs_m1b_baseline": -0.1325612855553627,
+      "cross_gender_mean": -0.08394487574696541,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.3330475389957428,
+          "source_sim": 0.2908204197883606,
+          "vc_effect": 0.0422271192073822,
+          "decode_time_ms": 220.16847700001563
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.383128821849823,
+          "source_sim": 0.3138483166694641,
+          "vc_effect": 0.06928050518035889,
+          "decode_time_ms": 197.81099600004382
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3641464412212372,
+          "source_sim": 0.31557074189186096,
+          "vc_effect": 0.04857569932937622,
+          "decode_time_ms": 198.44082000008711
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.1264534741640091,
+          "source_sim": 0.22306552529335022,
+          "vc_effect": -0.09661205112934113,
+          "decode_time_ms": 194.67742400001953
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.07941555231809616,
+          "source_sim": 0.15069325268268585,
+          "vc_effect": -0.07127770036458969,
+          "decode_time_ms": 204.1966900001171
+        }
+      ]
+    },
+    {
+      "top_k": 8,
+      "alpha": 0.0,
+      "mean_vc_effect": 0.10200022011995316,
+      "delta_vs_m05": 0.10100022011995316,
+      "delta_vs_m1b_baseline": -0.028999779880046844,
+      "cross_gender_mean": 0.018082711845636368,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.42448633909225464,
+          "source_sim": 0.21011710166931152,
+          "vc_effect": 0.21436923742294312,
+          "decode_time_ms": 209.18337099988094
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4104880690574646,
+          "source_sim": 0.2725018560886383,
+          "vc_effect": 0.1379862129688263,
+          "decode_time_ms": 221.8665380000857
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3759422302246094,
+          "source_sim": 0.25446200370788574,
+          "vc_effect": 0.12148022651672363,
+          "decode_time_ms": 212.6469629999974
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.14026491343975067,
+          "source_sim": 0.13915108144283295,
+          "vc_effect": 0.0011138319969177246,
+          "decode_time_ms": 215.67477300004612
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.1314210295677185,
+          "source_sim": 0.0963694378733635,
+          "vc_effect": 0.03505159169435501,
+          "decode_time_ms": 213.72774399992522
+        }
+      ]
+    },
+    {
+      "top_k": 8,
+      "alpha": 0.1,
+      "mean_vc_effect": 0.1003586620092392,
+      "delta_vs_m05": 0.0993586620092392,
+      "delta_vs_m1b_baseline": -0.03064133799076081,
+      "cross_gender_mean": 0.01757078617811203,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.39990994334220886,
+          "source_sim": 0.1756138801574707,
+          "vc_effect": 0.22429606318473816,
+          "decode_time_ms": 220.1987350001673
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4250895082950592,
+          "source_sim": 0.28569355607032776,
+          "vc_effect": 0.13939595222473145,
+          "decode_time_ms": 225.82290099990132
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3517155945301056,
+          "source_sim": 0.24875587224960327,
+          "vc_effect": 0.10295972228050232,
+          "decode_time_ms": 221.61082999991777
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.1266200691461563,
+          "source_sim": 0.15938687324523926,
+          "vc_effect": -0.03276680409908295,
+          "decode_time_ms": 225.16561299994464
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.16324539482593536,
+          "source_sim": 0.09533701837062836,
+          "vc_effect": 0.067908376455307,
+          "decode_time_ms": 190.70263899993734
+        }
+      ]
+    },
+    {
+      "top_k": 8,
+      "alpha": 0.3,
+      "mean_vc_effect": 0.041067248582839964,
+      "delta_vs_m05": 0.040067248582839964,
+      "delta_vs_m1b_baseline": -0.08993275141716003,
+      "cross_gender_mean": -0.045205190777778625,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.36136531829833984,
+          "source_sim": 0.24534663558006287,
+          "vc_effect": 0.11601868271827698,
+          "decode_time_ms": 202.90764100013803
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.39435410499572754,
+          "source_sim": 0.3180462419986725,
+          "vc_effect": 0.07630786299705505,
+          "decode_time_ms": 196.1449929999617
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.39558836817741394,
+          "source_sim": 0.2921682894229889,
+          "vc_effect": 0.10342007875442505,
+          "decode_time_ms": 198.50560800000494
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.12256596237421036,
+          "source_sim": 0.1785997897386551,
+          "vc_effect": -0.05603382736444473,
+          "decode_time_ms": 215.37356999988333
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.0930531844496727,
+          "source_sim": 0.12742973864078522,
+          "vc_effect": -0.03437655419111252,
+          "decode_time_ms": 223.6719490001633
+        }
+      ]
+    },
+    {
+      "top_k": 8,
+      "alpha": 0.5,
+      "mean_vc_effect": 0.025524702668190003,
+      "delta_vs_m05": 0.024524702668190002,
+      "delta_vs_m1b_baseline": -0.10547529733181,
+      "cross_gender_mean": -0.06031983345746994,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.34638580679893494,
+          "source_sim": 0.25029605627059937,
+          "vc_effect": 0.09608975052833557,
+          "decode_time_ms": 224.85937199985528
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.4018687307834625,
+          "source_sim": 0.31766536831855774,
+          "vc_effect": 0.08420336246490479,
+          "decode_time_ms": 220.89698500008126
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.38457849621772766,
+          "source_sim": 0.3166084289550781,
+          "vc_effect": 0.06797006726264954,
+          "decode_time_ms": 224.247073000015
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.114768385887146,
+          "source_sim": 0.20412595570087433,
+          "vc_effect": -0.08935756981372833,
+          "decode_time_ms": 193.13306300000477
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.11060217022895813,
+          "source_sim": 0.14188426733016968,
+          "vc_effect": -0.03128209710121155,
+          "decode_time_ms": 199.52078799997253
+        }
+      ]
+    },
+    {
+      "top_k": 16,
+      "alpha": 0.0,
+      "mean_vc_effect": 0.09644208699464799,
+      "delta_vs_m05": 0.09544208699464798,
+      "delta_vs_m1b_baseline": -0.03455791300535202,
+      "cross_gender_mean": -0.0004540272057056427,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.4340267777442932,
+          "source_sim": 0.18375395238399506,
+          "vc_effect": 0.25027282536029816,
+          "decode_time_ms": 206.36418599997342
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.399706095457077,
+          "source_sim": 0.2700042724609375,
+          "vc_effect": 0.12970182299613953,
+          "decode_time_ms": 213.0320329999904
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3359673321247101,
+          "source_sim": 0.23282349109649658,
+          "vc_effect": 0.1031438410282135,
+          "decode_time_ms": 215.26942099990265
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.15805873274803162,
+          "source_sim": 0.1753065586090088,
+          "vc_effect": -0.017247825860977173,
+          "decode_time_ms": 222.62111700001697
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.12589745223522186,
+          "source_sim": 0.10955768078565598,
+          "vc_effect": 0.016339771449565887,
+          "decode_time_ms": 228.9286650000122
+        }
+      ]
+    },
+    {
+      "top_k": 16,
+      "alpha": 0.1,
+      "mean_vc_effect": 0.08320306241512299,
+      "delta_vs_m05": 0.08220306241512298,
+      "delta_vs_m1b_baseline": -0.04779693758487702,
+      "cross_gender_mean": -0.0015116184949874878,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.39133572578430176,
+          "source_sim": 0.21288500726222992,
+          "vc_effect": 0.17845071852207184,
+          "decode_time_ms": 230.3379390000373
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.36402422189712524,
+          "source_sim": 0.2698230743408203,
+          "vc_effect": 0.09420114755630493,
+          "decode_time_ms": 227.6063009999234
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3984442949295044,
+          "source_sim": 0.25205761194229126,
+          "vc_effect": 0.14638668298721313,
+          "decode_time_ms": 233.27479099998527
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.17586596310138702,
+          "source_sim": 0.16990548372268677,
+          "vc_effect": 0.005960479378700256,
+          "decode_time_ms": 223.8933389999147
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.0804954543709755,
+          "source_sim": 0.08947917073965073,
+          "vc_effect": -0.008983716368675232,
+          "decode_time_ms": 226.1211170000479
+        }
+      ]
+    },
+    {
+      "top_k": 16,
+      "alpha": 0.3,
+      "mean_vc_effect": 0.03977312296628952,
+      "delta_vs_m05": 0.03877312296628952,
+      "delta_vs_m1b_baseline": -0.09122687703371049,
+      "cross_gender_mean": -0.03044997528195381,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.3668383061885834,
+          "source_sim": 0.2687278389930725,
+          "vc_effect": 0.09811046719551086,
+          "decode_time_ms": 238.2529930000601
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.42658740282058716,
+          "source_sim": 0.32518503069877625,
+          "vc_effect": 0.10140237212181091,
+          "decode_time_ms": 221.34000000005472
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3395047187805176,
+          "source_sim": 0.27925199270248413,
+          "vc_effect": 0.06025272607803345,
+          "decode_time_ms": 228.21849699994345
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.1428469568490982,
+          "source_sim": 0.19751033186912537,
+          "vc_effect": -0.05466337502002716,
+          "decode_time_ms": 290.7299769999554
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.1009899377822876,
+          "source_sim": 0.10722651332616806,
+          "vc_effect": -0.006236575543880463,
+          "decode_time_ms": 263.7216369998896
+        }
+      ]
+    },
+    {
+      "top_k": 16,
+      "alpha": 0.5,
+      "mean_vc_effect": 0.0020152129232883453,
+      "delta_vs_m05": 0.0010152129232883452,
+      "delta_vs_m1b_baseline": -0.12898478707671165,
+      "cross_gender_mean": -0.09706704877316952,
+      "voices": [
+        {
+          "voice_id": 0,
+          "speaker": "p225",
+          "target_sim": 0.373315691947937,
+          "source_sim": 0.25601527094841003,
+          "vc_effect": 0.11730042099952698,
+          "decode_time_ms": 305.7588469998791
+        },
+        {
+          "voice_id": 1,
+          "speaker": "p226",
+          "target_sim": 0.38062456250190735,
+          "source_sim": 0.32993990182876587,
+          "vc_effect": 0.05068466067314148,
+          "decode_time_ms": 219.84008300000824
+        },
+        {
+          "voice_id": 2,
+          "speaker": "p227",
+          "target_sim": 0.3309905230998993,
+          "source_sim": 0.294765442609787,
+          "vc_effect": 0.036225080490112305,
+          "decode_time_ms": 229.82711999998173
+        },
+        {
+          "voice_id": 3,
+          "speaker": "p228",
+          "target_sim": 0.11910414695739746,
+          "source_sim": 0.20746572315692902,
+          "vc_effect": -0.08836157619953156,
+          "decode_time_ms": 229.86106200005452
+        },
+        {
+          "voice_id": 4,
+          "speaker": "p229",
+          "target_sim": 0.0622098334133625,
+          "source_sim": 0.16798235476016998,
+          "vc_effect": -0.10577252134680748,
+          "decode_time_ms": 229.50880399980633
+        }
+      ]
+    }
+  ],
+  "best": {
+    "top_k": 1,
+    "alpha": 0.0,
+    "mean_vc_effect": 0.12994708865880966,
+    "delta_vs_m05": 0.12894708865880966,
+    "delta_vs_m1b_baseline": -0.0010529113411903435,
+    "cross_gender_mean": 0.03942980244755745,
+    "voices": [
+      {
+        "voice_id": 0,
+        "speaker": "p225",
+        "target_sim": 0.4053432047367096,
+        "source_sim": 0.18581226468086243,
+        "vc_effect": 0.21953094005584717,
+        "decode_time_ms": 324.97379499977797
+      },
+      {
+        "voice_id": 1,
+        "speaker": "p226",
+        "target_sim": 0.4553965926170349,
+        "source_sim": 0.23010201752185822,
+        "vc_effect": 0.2252945750951767,
+        "decode_time_ms": 229.34452300000885
+      },
+      {
+        "voice_id": 2,
+        "speaker": "p227",
+        "target_sim": 0.4156583845615387,
+        "source_sim": 0.28960806131362915,
+        "vc_effect": 0.12605032324790955,
+        "decode_time_ms": 225.93426000003092
+      },
+      {
+        "voice_id": 3,
+        "speaker": "p228",
+        "target_sim": 0.1530693918466568,
+        "source_sim": 0.13360576331615448,
+        "vc_effect": 0.01946362853050232,
+        "decode_time_ms": 225.9478409998792
+      },
+      {
+        "voice_id": 4,
+        "speaker": "p229",
+        "target_sim": 0.1316182166337967,
+        "source_sim": 0.07222224026918411,
+        "vc_effect": 0.05939597636461258,
+        "decode_time_ms": 225.22608199983551
+      }
+    ]
+  },
+  "baseline_m1b_delta": 0.131,
+  "pass": false,
+  "sweep_elapsed_s": 23.993856625000035
+}
