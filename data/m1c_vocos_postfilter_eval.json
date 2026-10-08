@@ -1,0 +1,68 @@
+{
+  "source": "data/source/source_001.wav",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.41527411341667175,
+      "source_sim": 0.15071448683738708,
+      "vc_effect": 0.26455962657928467,
+      "f0_out_median_hz": 168.72821044921875,
+      "ddsp_time_ms": 362.8608799999711,
+      "vocos_time_ms": 112.39430699970399
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.43319159746170044,
+      "source_sim": 0.2567480802536011,
+      "vc_effect": 0.17644351720809937,
+      "f0_out_median_hz": 115.2447280883789,
+      "ddsp_time_ms": 636.2855389998003,
+      "vocos_time_ms": 109.74831099974836
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.40405070781707764,
+      "source_sim": 0.2779199779033661,
+      "vc_effect": 0.12613072991371155,
+      "f0_out_median_hz": 116.73768615722656,
+      "ddsp_time_ms": 655.351786999745,
+      "vocos_time_ms": 106.36738599987439
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": 0.15392595529556274,
+      "source_sim": 0.1680399775505066,
+      "vc_effect": -0.014114022254943848,
+      "f0_out_median_hz": 204.42958068847656,
+      "ddsp_time_ms": 493.3225049999237,
+      "vocos_time_ms": 109.54803100048593
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.15781405568122864,
+      "source_sim": 0.10448583960533142,
+      "vc_effect": 0.05332821607589722,
+      "f0_out_median_hz": 181.88600158691406,
+      "ddsp_time_ms": 655.7201790001272,
+      "vocos_time_ms": 107.23077100010414
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.3128512859344482,
+    "mean_source_sim": 0.19158167243003846,
+    "mean_vc_effect": 0.12126961350440979,
+    "delta_vs_m05": 0.12026961350440979,
+    "delta_vs_m1b": -0.009730386495590215,
+    "cross_gender_mean_vc_effect": 0.019607096910476685
+  },
+  "ablation": {
+    "m05_baseline": 0.001,
+    "m1b_alone": 0.131,
+    "m1c_vocos_postfilter": 0.12026961350440979
+  }
+}
