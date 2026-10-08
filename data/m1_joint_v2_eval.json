@@ -1,0 +1,67 @@
+{
+  "source": "data/source/source_001.wav",
+  "weights": "models/voicepack_v2.safetensors",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.1883402019739151,
+      "source_sim": 0.23271560668945312,
+      "vc_effect": -0.044375404715538025,
+      "f0_out_median_hz": 168.72821044921875,
+      "decode_time_ms": 308.1365509999614
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.14760001003742218,
+      "source_sim": 0.204453706741333,
+      "vc_effect": -0.05685369670391083,
+      "f0_out_median_hz": 115.2447280883789,
+      "decode_time_ms": 203.1571539999959
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.1664605736732483,
+      "source_sim": 0.18947608768939972,
+      "vc_effect": -0.023015514016151428,
+      "f0_out_median_hz": 116.73768615722656,
+      "decode_time_ms": 221.75888200001737
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": -0.006826640572398901,
+      "source_sim": 0.21357911825180054,
+      "vc_effect": -0.22040575882419944,
+      "f0_out_median_hz": 204.42958068847656,
+      "decode_time_ms": 222.8145049999739
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.08926080167293549,
+      "source_sim": 0.21370738744735718,
+      "vc_effect": -0.12444658577442169,
+      "f0_out_median_hz": 181.88600158691406,
+      "decode_time_ms": 197.84998199997972
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.11696698935702443,
+    "mean_source_sim": 0.2107863813638687,
+    "mean_vc_effect": -0.09381939200684428,
+    "delta_vs_m05": -0.09481939200684428,
+    "cross_gender_mean_vc_effect": -0.17242617229931056
+  },
+  "ablation_comparison": {
+    "m05_baseline": 0.001,
+    "m1a_v1_alone_delta": -0.098,
+    "m1b_alone_delta": 0.131,
+    "m1a_v1_plus_m1b_delta": -0.014,
+    "m1a_v2_plus_m1b_delta": -0.09481939200684428
+  },
+  "milestone_target": 0.2,
+  "milestone_pass": false
+}

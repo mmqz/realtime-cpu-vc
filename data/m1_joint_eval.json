@@ -1,0 +1,71 @@
+{
+  "source": "data/source/source_001.wav",
+  "weights": "models/voicepack_v1.safetensors",
+  "voices": [
+    {
+      "voice_id": 0,
+      "speaker": "p225",
+      "target_sim": 0.20545515418052673,
+      "source_sim": 0.171280175447464,
+      "vc_effect": 0.034174978733062744,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 168.72821044921875,
+      "decode_time_ms": 268.15347399997336
+    },
+    {
+      "voice_id": 1,
+      "speaker": "p226",
+      "target_sim": 0.261664479970932,
+      "source_sim": 0.22694990038871765,
+      "vc_effect": 0.034714579582214355,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 115.2447280883789,
+      "decode_time_ms": 234.3947200000116
+    },
+    {
+      "voice_id": 2,
+      "speaker": "p227",
+      "target_sim": 0.21679361164569855,
+      "source_sim": 0.19764284789562225,
+      "vc_effect": 0.019150763750076294,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 116.73768615722656,
+      "decode_time_ms": 227.00073000004295
+    },
+    {
+      "voice_id": 3,
+      "speaker": "p228",
+      "target_sim": 0.0701860636472702,
+      "source_sim": 0.16249749064445496,
+      "vc_effect": -0.09231142699718475,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 204.42958068847656,
+      "decode_time_ms": 192.07391000003327
+    },
+    {
+      "voice_id": 4,
+      "speaker": "p229",
+      "target_sim": 0.04290333762764931,
+      "source_sim": 0.10367696732282639,
+      "vc_effect": -0.06077362969517708,
+      "f0_in_median_hz": 114.82632446289062,
+      "f0_out_median_hz": 181.88600158691406,
+      "decode_time_ms": 199.95174899997892
+    }
+  ],
+  "summary": {
+    "mean_target_sim": 0.15940052941441535,
+    "mean_source_sim": 0.17240947633981704,
+    "mean_vc_effect": -0.013008946925401688,
+    "delta_vs_m05": -0.014008946925401687,
+    "cross_gender_mean_vc_effect": -0.07654252834618092
+  },
+  "ablation_comparison": {
+    "m05_baseline": 0.001,
+    "m1a_alone_delta": -0.098,
+    "m1b_alone_delta": 0.131,
+    "m1_joint_delta": -0.014008946925401687
+  },
+  "milestone_target": 0.2,
+  "milestone_pass": false
+}
